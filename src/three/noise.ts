@@ -246,16 +246,3 @@ export function heightAt(x: number, z: number): number {
 
   return h * border;
 }
-
-/** Central-difference terrain normal. */
-export function normalAt(x: number, z: number, eps = 3.4): [number, number, number] {
-  const hL = heightAt(x - eps, z);
-  const hR = heightAt(x + eps, z);
-  const hD = heightAt(x, z - eps);
-  const hU = heightAt(x, z + eps);
-  const nx = hL - hR;
-  const nz = hD - hU;
-  const ny = 2 * eps;
-  const len = Math.hypot(nx, ny, nz) || 1;
-  return [nx / len, ny / len, nz / len];
-}

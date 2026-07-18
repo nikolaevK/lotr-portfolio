@@ -35,6 +35,7 @@ const BOX = new THREE.Vector3(680, 180, 680);
 
 function ZoneCloud({ def }: { def: ZoneDef }) {
   const quality = useGame((s) => s.quality);
+  const ptsRef = useRef<THREE.Object3D | null>(null);
   const matRef = useRef<THREE.ShaderMaterial>(null);
 
   const { geo, mat } = useMemo(() => {
@@ -136,12 +137,14 @@ function ZoneCloud({ def }: { def: ZoneDef }) {
     m.uniforms.uWind.value.set(runtime.wind.x, runtime.wind.y);
     const w = (runtime.zoneWeights[def.zone] ?? 0) * morph.value;
     m.uniforms.uOpacity.value = w * (def.additive ? 0.9 : 0.75);
+    // fully transparent out of zone — skip the draw entirely
+    if (ptsRef.current) ptsRef.current.visible = w > 0.004;
   });
 
   const drawCount = quality === "high" ? def.count : Math.floor(def.count * 0.5);
   geo.setDrawRange(0, drawCount);
 
-  return <points geometry={geo} material={mat} ref={(p) => { if (p) matRef.current = p.material as THREE.ShaderMaterial; }} frustumCulled={false} />;
+  return <points geometry={geo} material={mat} ref={(p) => { ptsRef.current = p; if (p) matRef.current = p.material as THREE.ShaderMaterial; }} frustumCulled={false} />;
 }
 
 export function ZoneParticles() {

@@ -4,7 +4,7 @@ import { useMemo, useRef } from "react";
 import { useFrame, useLoader } from "@react-three/fiber";
 import * as THREE from "three";
 import { MAP_W, MAP_H, SEA_LEVEL } from "@/data/content";
-import { heightAt, normalAt, fbm } from "@/three/noise";
+import { heightAt, fbm } from "@/three/noise";
 import { useGame } from "@/state/store";
 
 const SEG_X = 384;
@@ -33,10 +33,27 @@ function buildGeometry() {
       uvs[i * 2] = ix / SEG_X;
       uvs[i * 2 + 1] = 1 - iz / SEG_Z; // v flipped: map image top = north (z=0)
       aH[i] = heightAt(x, z);
-      const n = normalAt(x, z);
-      aN[i * 3] = n[0];
-      aN[i * 3 + 1] = n[1];
-      aN[i * 3 + 2] = n[2];
+      i++;
+    }
+  }
+
+  // normals by central difference on the height grid — heightAt is the hot
+  // path of this (main-thread) build, so avoid 4 extra calls per vertex
+  const dx = MAP_W / SEG_X; // grid spacing (same in z: MAP_H / SEG_Z)
+  i = 0;
+  for (let iz = 0; iz < nz; iz++) {
+    for (let ix = 0; ix < nx; ix++) {
+      const ixL = Math.max(0, ix - 1);
+      const ixR = Math.min(SEG_X, ix + 1);
+      const izD = Math.max(0, iz - 1);
+      const izU = Math.min(SEG_Z, iz + 1);
+      const nxc = aH[iz * nx + ixL] - aH[iz * nx + ixR];
+      const nzc = aH[izD * nx + ix] - aH[izU * nx + ix];
+      const nyc = (ixR - ixL) * dx; // matches normalAt's 2·eps, halved at edges
+      const len = Math.hypot(nxc, nyc, nzc) || 1;
+      aN[i * 3] = nxc / len;
+      aN[i * 3 + 1] = nyc / len;
+      aN[i * 3 + 2] = nzc / len;
       i++;
     }
   }

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { BEACONS, CURSORS, LOST_PAGES, REGIONS, TITLES, XP_MAX } from "@/data/content";
 import { useGame } from "@/state/store";
 
@@ -41,13 +43,25 @@ function CursorButton({ id, title, children }: { id: string; title: string; chil
 }
 
 export function Hud() {
-  const s = useGame();
+  // subscribe only to what the HUD shows — a full-store subscription re-renders
+  // this whole tree on every toast/cursor/panel change
+  const s = useGame(
+    useShallow((st) => ({
+      phase: st.phase, visited: st.visited, pages: st.pages, beacons: st.beacons,
+      xp: st.xp, tone: st.tone, mount: st.mount, overview: st.overview,
+      quality: st.quality, muted: st.muted, weatherZone: st.weatherZone,
+      caption: st.caption, voiceCaption: st.voiceCaption,
+      toggleQuest: st.toggleQuest, toggleTone: st.toggleTone, setMount: st.setMount,
+      toggleOverview: st.toggleOverview, toggleQuality: st.toggleQuality,
+      toggleMute: st.toggleMute, setContact: st.setContact,
+    })),
+  );
+  const [isTouch] = useState(() => typeof window !== "undefined" && matchMedia("(pointer: coarse)").matches);
   if (s.phase !== "map") return null;
 
   const count = Object.keys(s.visited).length;
   const pagesN = Object.keys(s.pages).length;
   const beaconsN = Object.keys(s.beacons).length;
-  const isTouch = typeof window !== "undefined" && matchMedia("(pointer: coarse)").matches;
 
   return (
     <>

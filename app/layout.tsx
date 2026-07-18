@@ -60,7 +60,25 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${cinzel.variable} ${fell.variable} ${garamond.variable}`}>
-      <body>{children}</body>
+      <head>
+        {/* hero texture: fetch in parallel with the JS instead of after canvas mount;
+            crossOrigin must match THREE.TextureLoader ("anonymous") to reuse the cache entry */}
+        <link rel="preload" as="image" href="/assets/map.jpg" crossOrigin="anonymous" />
+      </head>
+      <body>
+        <noscript>
+          <div style={{ maxWidth: 460, margin: "20vh auto 0", padding: "34px 40px", textAlign: "center" }}>
+            <h1>There and Back Again — Konstantin Nikolaev</h1>
+            <p>
+              This portfolio is an interactive 3D map of Middle-earth and needs JavaScript. The old
+              roads remain: <a href="https://linkedin.com/in/konn">linkedin.com/in/konn</a> ·{" "}
+              <a href="https://github.com/nikolaevK">github.com/nikolaevK</a> ·{" "}
+              <a href="/assets/resume.pdf">résumé (PDF)</a>
+            </p>
+          </div>
+        </noscript>
+        {children}
+      </body>
     </html>
   );
 }

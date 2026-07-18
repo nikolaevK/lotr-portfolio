@@ -1,12 +1,21 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, type ThreeElements } from "@react-three/fiber";
 import * as THREE from "three";
 import { MAP_W, MAP_H, SEA_LEVEL, toWorldX, toWorldZ } from "@/data/content";
 import { heightAt } from "@/three/noise";
 import { morph } from "@/three/Terrain";
 import { Plume } from "@/three/Particles";
+import { useGame } from "@/state/store";
+
+/** Landmark point light — skipped on low quality (every light costs per-fragment
+ *  work across the whole forward-rendered scene, terrain included). */
+function Lamp(props: ThreeElements["pointLight"]) {
+  const quality = useGame((s) => s.quality);
+  if (quality === "low") return null;
+  return <pointLight {...props} />;
+}
 
 // shared materials
 const M = {
@@ -46,6 +55,9 @@ const M = {
   ruinStone: new THREE.MeshStandardMaterial({ color: "#7a7268", roughness: 0.95 }),
 };
 
+// beyond this the fog has mostly swallowed a landmark — skip its draw calls
+const CULL_DIST_SQ = 1500 * 1500;
+
 /** Anchors a landmark group to terrain height, rising with the morph. */
 function Grounded({
   u, v, children, yOffset = 0,
@@ -54,10 +66,12 @@ function Grounded({
   const x = toWorldX(u);
   const z = toWorldZ(v);
   const baseY = useMemo(() => heightAt(x, z), [x, z]);
-  useFrame(() => {
+  useFrame(({ camera }) => {
     if (ref.current) {
-      ref.current.position.y = baseY * morph.value + yOffset;
-      ref.current.visible = morph.value > 0.02;
+      const dx = camera.position.x - x;
+      const dz = camera.position.z - z;
+      ref.current.visible = morph.value > 0.02 && dx * dx + dz * dz < CULL_DIST_SQ;
+      if (ref.current.visible) ref.current.position.y = baseY * morph.value + yOffset;
     }
   });
   return (
@@ -317,7 +331,7 @@ function Rivendell() {
         <Tree x={18} z={2} s={1.1} mat={M.autumn} />
         <Tree x={6} z={14} s={1.0} mat={M.autumn} />
         <Waterfall />
-        <pointLight color="#ffe9b0" intensity={60} distance={70} position={[0, 16, 0]} decay={2} />
+        <Lamp color="#ffe9b0" intensity={60} distance={70} position={[0, 16, 0]} decay={2} />
       </Grounded>
       {/* Lothlórien — golden mallorn wood with flets and elf-lanterns */}
       <Grounded u={0.548} v={0.372}>
@@ -337,7 +351,7 @@ function Rivendell() {
             </mesh>
           </group>
         ))}
-        <pointLight color="#ffd76a" intensity={80} distance={90} position={[0, 22, 0]} decay={2} />
+        <Lamp color="#ffd76a" intensity={80} distance={90} position={[0, 22, 0]} decay={2} />
       </Grounded>
     </>
   );
@@ -458,7 +472,7 @@ function Erebor() {
         ))}
         <DwarfStatue x={-15.5} s={1.15} />
         <DwarfStatue x={15.5} s={1.15} />
-        <pointLight color="#ff8a2e" intensity={140} distance={70} position={[0, 8, 8]} decay={1.8} />
+        <Lamp color="#ff8a2e" intensity={140} distance={70} position={[0, 8, 8]} decay={1.8} />
        </group>
       </Grounded>
       {/* smoke from the mountain's chimneys */}
@@ -586,7 +600,7 @@ function MinasTirith() {
       <mesh material={M.whiteTrim} position={[0, 48.2, 0]} castShadow>
         <coneGeometry args={[2.5, 5.4, 12]} />
       </mesh>
-      <pointLight color="#fff2d8" intensity={90} distance={100} position={[0, 36, 12]} decay={2} />
+      <Lamp color="#fff2d8" intensity={90} distance={100} position={[0, 36, 12]} decay={2} />
     </Grounded>
   );
 }
@@ -683,7 +697,7 @@ function BaradDur() {
           />
         </mesh>
       </group>
-      <pointLight color="#ff5a1e" intensity={420} distance={210} position={[0, 91, 0]} decay={1.9} />
+      <Lamp color="#ff5a1e" intensity={420} distance={210} position={[0, 91, 0]} decay={1.9} />
     </Grounded>
   );
 }
@@ -751,7 +765,7 @@ function MountDoom() {
         </mesh>
         <Plume position={[0, 3, 0]} color="#ff6a1a" count={130} spread={6.5} height={120} size={4} rise={18} opacity={0.7} />
         <Plume position={[0, 6, 0]} color="#40342c" count={80} spread={10} height={180} size={7} rise={10} additive={false} opacity={0.4} />
-        <pointLight color="#ff4a12" intensity={520} distance={190} position={[0, 9, 0]} decay={1.9} />
+        <Lamp color="#ff4a12" intensity={520} distance={190} position={[0, 9, 0]} decay={1.9} />
       </Grounded>
     </>
   );
@@ -1055,7 +1069,7 @@ function GreyHavens() {
             </mesh>
           </group>
         ))}
-        <pointLight color="#dfe8ff" intensity={30} distance={50} position={[0, 9, 0]} decay={2} />
+        <Lamp color="#dfe8ff" intensity={30} distance={50} position={[0, 9, 0]} decay={2} />
       </Grounded>
     </>
   );
@@ -1255,7 +1269,7 @@ function MoriaGate() {
           <dodecahedronGeometry args={[bs, 0]} />
         </mesh>
       ))}
-      <pointLight ref={glowRef} color="#9fd8ff" intensity={26} distance={44} position={[-4, 9, 0]} decay={2} />
+      <Lamp ref={glowRef} color="#9fd8ff" intensity={26} distance={44} position={[-4, 9, 0]} decay={2} />
     </Grounded>
   );
 }

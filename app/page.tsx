@@ -10,9 +10,11 @@ export default function Page() {
 
   useEffect(() => {
     try {
+      // three r163+ requires WebGL2 — a webgl1-only context would black-screen
       const c = document.createElement("canvas");
-      const gl = c.getContext("webgl2") || c.getContext("webgl");
+      const gl = c.getContext("webgl2");
       setWebgl(!!gl);
+      (gl?.getExtension("WEBGL_lose_context") as { loseContext(): void } | null)?.loseContext();
     } catch {
       setWebgl(false);
     }

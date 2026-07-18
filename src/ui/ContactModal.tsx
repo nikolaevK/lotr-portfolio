@@ -18,14 +18,13 @@ export function ContactModal() {
     const message = (f.elements.namedItem("message") as HTMLTextAreaElement).value;
     const body = `From: ${from} (${email})\n\n${message}`;
     sendRaven();
-    setTimeout(() => {
-      window.open(
-        "mailto:konstantin@nikolaev.us?subject=" +
-          encodeURIComponent("A raven from " + from) +
-          "&body=" +
-          encodeURIComponent(body),
-      );
-    }, 2200);
+    // navigate synchronously in the submit gesture — deferring this to a
+    // timeout gets it popup-blocked in Safari/Firefox (raven flies regardless)
+    window.location.href =
+      "mailto:konstantin@nikolaev.us?subject=" +
+      encodeURIComponent("A raven from " + from) +
+      "&body=" +
+      encodeURIComponent(body);
   };
 
   const inputStyle: React.CSSProperties = {

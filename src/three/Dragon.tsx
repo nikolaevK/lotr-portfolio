@@ -640,6 +640,21 @@ function rotAboutX(target: THREE.Vector3, pivot: THREE.Vector3, src: THREE.Vecto
   target.add(pivot);
 }
 
+// per-frame scratch for the wing solver — no allocations in the frame loop
+const _wP = new THREE.Vector3();
+const _fP = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+const _outline = Array.from({ length: OUTLINE }, () => new THREE.Vector3());
+const _center = new THREE.Vector3();
+
+function scallopInto(
+  m: THREE.Vector3, p1: THREE.Vector3, p2: THREE.Vector3, pull: number, S: THREE.Vector3, sag: number,
+) {
+  m.copy(p1).add(p2).multiplyScalar(0.5);
+  _v2.copy(S).sub(m).multiplyScalar(pull);
+  m.add(_v2);
+  m.y += sag * 0.7;
+}
+
 export function Dragon() {
   const rig = useMemo(buildDragon, []);
   const flight = useRef(createFlightState());
@@ -737,34 +752,33 @@ export function Dragon() {
       const { S, E, W, F, H, L } = wing.rest;
       const eP = _v.set(0, 0, 0);
       rotAboutX(eP, S, E, -sgn * phi1);
-      const wP = new THREE.Vector3();
+      const wP = _wP;
       rotAboutX(wP, S, W, -sgn * phi1);
       rotAboutX(wP, eP, wP, -sgn * phi2);
-      const fP: THREE.Vector3[] = [];
-      for (const f of F) {
-        const p = new THREE.Vector3();
-        rotAboutX(p, S, f, -sgn * phi1);
+      const fP = _fP;
+      for (let i = 0; i < F.length; i++) {
+        const p = fP[i];
+        rotAboutX(p, S, F[i], -sgn * phi1);
         rotAboutX(p, eP, p, -sgn * phi2);
         rotAboutX(p, wP, p, -sgn * phi3);
-        fP.push(p);
       }
 
       // membrane outline: L,E,W,F1,m12,F2,m23,F3,m34,F4,m4H,H
       const sag = THREE.MathUtils.clamp(-a.flapVel * 0.055, -0.5, 0.5);
-      const outline: THREE.Vector3[] = [];
-      outline.push(L.clone(), eP.clone(), wP.clone(), fP[0].clone());
-      const scallop = (p1: THREE.Vector3, p2: THREE.Vector3, pull: number) => {
-        const m = p1.clone().add(p2).multiplyScalar(0.5);
-        _v2.copy(S).sub(m).multiplyScalar(pull);
-        m.add(_v2);
-        m.y += sag * 0.7;
-        return m;
-      };
-      outline.push(scallop(fP[0], fP[1], 0.13), fP[1].clone());
-      outline.push(scallop(fP[1], fP[2], 0.15), fP[2].clone());
-      outline.push(scallop(fP[2], fP[3], 0.15), fP[3].clone());
-      outline.push(scallop(fP[3], H, 0.12), H.clone());
-      const center = new THREE.Vector3();
+      const outline = _outline;
+      outline[0].copy(L);
+      outline[1].copy(eP);
+      outline[2].copy(wP);
+      outline[3].copy(fP[0]);
+      scallopInto(outline[4], fP[0], fP[1], 0.13, S, sag);
+      outline[5].copy(fP[1]);
+      scallopInto(outline[6], fP[1], fP[2], 0.15, S, sag);
+      outline[7].copy(fP[2]);
+      scallopInto(outline[8], fP[2], fP[3], 0.15, S, sag);
+      outline[9].copy(fP[3]);
+      scallopInto(outline[10], fP[3], H, 0.12, S, sag);
+      outline[11].copy(H);
+      const center = _center.set(0, 0, 0);
       for (const p of outline) center.add(p);
       center.multiplyScalar(1 / outline.length);
       center.y += sag * 1.15;

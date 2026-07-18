@@ -1,12 +1,19 @@
 "use client";
 
+import { useShallow } from "zustand/react/shallow";
 import { BEACONS, LOST_PAGES, REGIONS, TITLES } from "@/data/content";
 import { useGame } from "@/state/store";
 import { travelTo } from "@/game/actions";
 import { runtime } from "@/game/runtime";
 
 export function QuestLog() {
-  const s = useGame();
+  const s = useGame(
+    useShallow((st) => ({
+      visited: st.visited, pages: st.pages, beacons: st.beacons,
+      tone: st.tone, questOpen: st.questOpen,
+      toggleQuest: st.toggleQuest, resetJourney: st.resetJourney,
+    })),
+  );
   const count = Object.keys(s.visited).length;
   const pagesN = Object.keys(s.pages).length;
   const beaconsN = Object.keys(s.beacons).length;
