@@ -1,0 +1,28 @@
+{
+  "name": "there-and-back-again",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Middle-earth portfolio of Konstantin Nikolaev — an interactive 3D dragon-flight over the map of Middle-earth",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^9.1.2",
+    "@react-three/postprocessing": "^3.0.4",
+    "next": "^15.3.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "three": "0.175.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.175.0",
+    "typescript": "^5.8.2"
+  }
+}

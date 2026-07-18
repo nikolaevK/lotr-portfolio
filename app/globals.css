@@ -1,0 +1,178 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0e0a06;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--font-garamond), var(--font-fell), serif;
+  color: #e8dcc0;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: #c9963c;
+  text-decoration: none;
+}
+a:hover {
+  color: #e8b95c;
+}
+
+button {
+  font-family: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(20, 13, 6, 0.6);
+}
+::-webkit-scrollbar-thumb {
+  background: #6b5327;
+  border-radius: 5px;
+}
+
+.cinzel {
+  font-family: var(--font-cinzel), serif;
+}
+.fell {
+  font-family: var(--font-fell), serif;
+}
+
+/* ===== keyframes ported from the 2D concept ===== */
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.5;
+  }
+}
+@keyframes toastIn {
+  from {
+    transform: translateY(18px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes riseIn {
+  from {
+    transform: translateY(60px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes ravenFly {
+  0% {
+    left: -6%;
+    top: 74%;
+    transform: rotate(-14deg) scale(0.8);
+  }
+  60% {
+    left: 58%;
+    top: 30%;
+    transform: rotate(-8deg) scale(1);
+  }
+  100% {
+    left: 106%;
+    top: 8%;
+    transform: rotate(-4deg) scale(0.7);
+  }
+}
+@keyframes ravenFlap {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.4);
+  }
+}
+@keyframes unrollH {
+  from {
+    max-height: 44px;
+  }
+  to {
+    max-height: 72vh;
+  }
+}
+@keyframes sealPop {
+  from {
+    transform: scale(0.4) rotate(-30deg);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) rotate(-6deg);
+    opacity: 1;
+  }
+}
+@keyframes glintSweep {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+@keyframes coverEmber {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-46vh) scale(0.3);
+    opacity: 0;
+  }
+}
+
+.seal-btn:hover {
+  transform: rotate(-6deg) scale(1.1);
+}
+.marker-label:hover {
+  filter: brightness(1.25);
+}
+.hud-btn {
+  transition: filter 0.15s, transform 0.15s;
+}
+.hud-btn:hover {
+  filter: brightness(1.3);
+}
+.hud-btn:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 760px), (pointer: coarse) {
+  .minimap {
+    display: none;
+  }
+}
