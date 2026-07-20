@@ -390,21 +390,42 @@ function buildEagle(): EagleRig {
   tailPivot.position.set(-2.45, 0.16, 0);
   bodyGroup.add(tailPivot);
   const tailInner = new THREE.Group();
-  tailInner.rotation.y = Math.PI / 2; // feathers' +Z → model -X (sweep back)
+  tailInner.rotation.y = -Math.PI / 2; // feathers' +Z → model -X (sweep back)
   tailPivot.add(tailInner);
   const tailFeathers: Feather[] = [];
   for (let i = 0; i < 7; i++) {
     const k = i - 3;
     const f = mkFeather(tailInner, tailMat, 1, 0.5, 2.35 - Math.abs(k) * 0.16, 0, Math.abs(k) / 3, 0, -0.012 * Math.abs(k), 0);
     f.fan = k * 0.3; // symmetric fan, re-scaled each frame
+    f.mesh.rotation.x = 0.045 * k; // slight cupping so the fan reads as one surface
     tailFeathers.push(f);
+  }
+  // tail coverts — gold above, pale below, hiding the quill roots
+  for (let i = -1; i <= 1; i++) {
+    const upper = new THREE.Mesh(featherGeo, goldMat);
+    upper.scale.set(0.55, 1, 1.15);
+    upper.position.set(0, 0.055, 0.06);
+    upper.rotation.set(0.06 * i, i * 0.3, 0);
+    upper.castShadow = true;
+    tailInner.add(upper);
+    const under = new THREE.Mesh(featherGeo, tailMat);
+    under.scale.set(0.5, 1, 0.9);
+    under.position.set(0, -0.05, 0.05);
+    under.rotation.set(-0.05 * i, i * 0.34, 0);
+    tailInner.add(under);
   }
 
   // ── tucked legs & talons ──
+  const thighMat = new THREE.MeshStandardMaterial({ color: "#4e3820", roughness: 0.95, bumpMap: speckle, bumpScale: 0.4 });
   const legs: THREE.Group[] = [];
   for (const sd of [-1, 1]) {
     const leg = new THREE.Group();
     leg.position.set(-0.7, -0.62, sd * 0.34);
+    // feathered thigh — the golden eagle's "boots"
+    const thigh = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), thighMat);
+    thigh.position.set(0.12, 0.3, 0);
+    thigh.scale.set(1.45, 1.15, 0.85);
+    leg.add(thigh);
     const tarsus = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.5, 3, 7), tarsusMat);
     tarsus.rotation.z = 1.15;
     tarsus.castShadow = true;
