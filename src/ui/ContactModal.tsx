@@ -1,27 +1,39 @@
 "use client";
 
 import { useGame } from "@/state/store";
+import { useContent } from "@/state/content";
 import { PARCHMENT_BG, parchmentOverlay, EDGE_BURN } from "@/ui/parchment";
 
 export function ContactModal() {
   const open = useGame((s) => s.contactOpen);
   const setContact = useGame((s) => s.setContact);
   const sendRaven = useGame((s) => s.sendRaven);
+  const profile = useContent((c) => c.profile);
+  const resumeVariants = useContent((c) => c.resumeVariants);
 
   if (!open) return null;
+
+  const email = profile?.email ?? "konstantin@nikolaev.us";
+  const links = profile?.links?.length
+    ? profile.links
+    : [
+        { label: "LinkedIn", url: "https://linkedin.com/in/konn" },
+        { label: "GitHub", url: "https://github.com/nikolaevK" },
+      ];
+  const resume = resumeVariants.find((v) => v.isDefault) ?? resumeVariants[0];
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = e.currentTarget;
     const from = (f.elements.namedItem("from") as HTMLInputElement).value;
-    const email = (f.elements.namedItem("email") as HTMLInputElement).value;
+    const fromEmail = (f.elements.namedItem("email") as HTMLInputElement).value;
     const message = (f.elements.namedItem("message") as HTMLTextAreaElement).value;
-    const body = `From: ${from} (${email})\n\n${message}`;
+    const body = `From: ${from} (${fromEmail})\n\n${message}`;
     sendRaven();
     // navigate synchronously in the submit gesture — deferring this to a
     // timeout gets it popup-blocked in Safari/Firefox (raven flies regardless)
     window.location.href =
-      "mailto:konstantin@nikolaev.us?subject=" +
+      `mailto:${email}?subject=` +
       encodeURIComponent("A raven from " + from) +
       "&body=" +
       encodeURIComponent(body);
@@ -62,7 +74,7 @@ export function ContactModal() {
         <div style={parchmentOverlay} />
         <div className="cinzel" style={{ position: "relative", fontSize: 13, letterSpacing: ".22em", color: "#8a6420" }}>BY WING TO SHERMAN OAKS</div>
         <h2 className="cinzel" style={{ fontWeight: 700, fontSize: 26, margin: "8px 0 4px", color: "#2c1f0d" }}>Send a Raven</h2>
-        <div style={{ fontSize: 16, fontStyle: "italic", color: "#6d5a33", marginBottom: 18 }}>The bird knows the way to konstantin@nikolaev.us</div>
+        <div style={{ fontSize: 16, fontStyle: "italic", color: "#6d5a33", marginBottom: 18 }}>The bird knows the way to {email}</div>
         <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <input name="from" required placeholder="Your name" style={inputStyle} />
           <input name="email" type="email" required placeholder="Your email (so the raven may return)" style={inputStyle} />
@@ -76,10 +88,19 @@ export function ContactModal() {
           </button>
         </form>
         <div style={{ marginTop: 14, textAlign: "center", fontSize: 14, color: "#6d5a33" }}>
-          or by the old roads: <a href="https://linkedin.com/in/konn" target="_blank" rel="noreferrer">linkedin.com/in/konn</a> ·{" "}
-          <a href="https://github.com/nikolaevK" target="_blank" rel="noreferrer">github.com/nikolaevK</a>
-          <br />
-          or take the written scroll: <a href="/assets/resume.pdf" target="_blank" rel="noreferrer">Résumé (PDF)</a>
+          or by the old roads:{" "}
+          {links.map((l, i) => (
+            <span key={l.label}>
+              {i > 0 && " · "}
+              <a href={l.url} target="_blank" rel="noreferrer">{l.url.replace(/^https?:\/\//, "")}</a>
+            </span>
+          ))}
+          {resume && (
+            <>
+              <br />
+              or take the written scroll: <a href={resume.path} target="_blank" rel="noreferrer">Résumé — {resume.label} (PDF)</a>
+            </>
+          )}
         </div>
       </div>
     </div>

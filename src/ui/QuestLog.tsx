@@ -1,7 +1,7 @@
 "use client";
 
 import { useShallow } from "zustand/react/shallow";
-import { BEACONS, LOST_PAGES, REGIONS, TITLES } from "@/data/content";
+import { useContent } from "@/state/content";
 import { useGame } from "@/state/store";
 import { travelTo } from "@/game/actions";
 import { runtime } from "@/game/runtime";
@@ -14,6 +14,10 @@ export function QuestLog() {
       toggleQuest: st.toggleQuest, resetJourney: st.resetJourney,
     })),
   );
+  const REGIONS = useContent((c) => c.regions);
+  const TITLES = useContent((c) => c.titles);
+  const LOST_PAGES = useContent((c) => c.lostPages);
+  const BEACONS = useContent((c) => c.beacons);
   const count = Object.keys(s.visited).length;
   const pagesN = Object.keys(s.pages).length;
   const beaconsN = Object.keys(s.beacons).length;
@@ -41,7 +45,9 @@ export function QuestLog() {
       <div style={{ padding: "20px 22px 14px", borderBottom: "1px solid #4a3a18", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div className="cinzel" style={{ fontSize: 18, letterSpacing: ".12em", color: "#e2c682" }}>QUEST LOG</div>
-          <div style={{ fontSize: 14, fontStyle: "italic", color: "#9c8a5e", marginTop: 2 }}>{TITLES[count]}</div>
+          {TITLES.length > 0 && (
+            <div style={{ fontSize: 14, fontStyle: "italic", color: "#9c8a5e", marginTop: 2 }}>{TITLES[Math.min(count, TITLES.length - 1)]}</div>
+          )}
         </div>
         <button onClick={s.toggleQuest} style={{ background: "none", border: "1px solid #6b5327", color: "#c7b485", width: 30, height: 30, cursor: "pointer", fontSize: 15, borderRadius: 2 }}>
           ✕

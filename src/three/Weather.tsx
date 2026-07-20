@@ -3,7 +3,8 @@
 import { useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { REGIONS, toWorldX, toWorldZ } from "@/data/content";
+import { toWorldX, toWorldZ } from "@/data/content";
+import { content } from "@/state/content";
 import { runtime } from "@/game/runtime";
 import { game, useGame } from "@/state/store";
 import { skyUniforms } from "@/three/SkyDome";
@@ -113,7 +114,8 @@ export function Weather() {
     let bestD = Infinity;
     const weights = runtime.zoneWeights;
     let maxW = 0;
-    for (const r of REGIONS) {
+    const regions = content().regions;
+    for (const r of regions) {
       const d = Math.hypot(toWorldX(r.x) - vx, toWorldZ(r.y) - vz);
       let t = Math.max(0, 1 - d / 680);
       t = t * t * (3 - 2 * t);
@@ -145,10 +147,11 @@ export function Weather() {
     tgt.skyHorizon.copy(c.skyHorizon);
     tgt.cloud.copy(c.cloud);
     tgt.cloudO = c.cloudO;
-    for (const r of REGIONS) {
+    for (const r of regions) {
       const w = weights[r.id];
       if (w <= 0.001) continue;
       const p = PRESETS[r.id];
+      if (!p) continue; // admin-added region without a compiled weather preset stays clear
       tgt.fog.lerp(p.fog, w);
       tgt.fogDensity = THREE.MathUtils.lerp(tgt.fogDensity, p.fogDensity, w);
       tgt.sun.lerp(p.sun, w);

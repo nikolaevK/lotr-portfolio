@@ -6,6 +6,7 @@ import { Overlay } from "@/ui/Overlay";
 import { attachKeyboard, attachMouse } from "@/input/controls";
 import { runtime } from "@/game/runtime";
 import { useGame } from "@/state/store";
+import { useContent } from "@/state/content";
 import { CURSORS, MAP_W, MAP_H } from "@/data/content";
 import { voice } from "@/audio/voice";
 import { audio } from "@/audio/engine";
@@ -31,6 +32,11 @@ export default function App() {
       offM();
     };
   }, [escape, toggleOverview]);
+
+  // live content from Turso replaces the bundled fallback once fetched
+  useEffect(() => {
+    useContent.getState().hydrate();
+  }, []);
 
   // auto quality: modest hardware starts low (user can toggle in HUD)
   useEffect(() => {

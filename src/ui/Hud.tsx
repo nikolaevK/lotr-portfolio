@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { BEACONS, CURSORS, LOST_PAGES, REGIONS, TITLES, XP_MAX } from "@/data/content";
+import { useContent, xpEarned, xpMax } from "@/state/content";
 import { useGame } from "@/state/store";
 
 const btnStyle: React.CSSProperties = {
@@ -48,7 +48,7 @@ export function Hud() {
   const s = useGame(
     useShallow((st) => ({
       phase: st.phase, visited: st.visited, pages: st.pages, beacons: st.beacons,
-      xp: st.xp, tone: st.tone, mount: st.mount, overview: st.overview,
+      tone: st.tone, mount: st.mount, overview: st.overview,
       quality: st.quality, muted: st.muted, weatherZone: st.weatherZone,
       caption: st.caption, voiceCaption: st.voiceCaption,
       toggleQuest: st.toggleQuest, toggleTone: st.toggleTone, setMount: st.setMount,
@@ -57,8 +57,13 @@ export function Hud() {
     })),
   );
   const [isTouch] = useState(() => typeof window !== "undefined" && matchMedia("(pointer: coarse)").matches);
+  const c = useContent(
+    useShallow((ct) => ({ regions: ct.regions, titles: ct.titles, lostPages: ct.lostPages, beacons: ct.beacons, xp: ct.xp })),
+  );
   if (s.phase !== "map") return null;
 
+  const XP_MAX = xpMax(c);
+  const xp = xpEarned({ visited: s.visited, pages: s.pages, beacons: s.beacons }, c);
   const count = Object.keys(s.visited).length;
   const pagesN = Object.keys(s.pages).length;
   const beaconsN = Object.keys(s.beacons).length;
@@ -84,21 +89,23 @@ export function Hud() {
         <div style={{ pointerEvents: "auto", display: "flex", flexDirection: "column", gap: 8, maxWidth: "48vw" }}>
           <button onClick={s.toggleQuest} className="cinzel hud-btn" style={{ ...btnStyle, display: "flex", alignItems: "center", gap: 10, fontSize: 14, letterSpacing: ".1em", padding: "10px 16px" }}>
             <span style={{ display: "inline-block", width: 10, height: 10, background: "#c9963c", transform: "rotate(45deg)" }} />
-            QUEST LOG · {count} / {REGIONS.length}
+            QUEST LOG · {count} / {c.regions.length}
           </button>
-          <div style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "5px 12px", fontSize: 14, fontStyle: "italic", color: "#b8a678", borderRadius: 2 }}>
-            {TITLES[count]}
-          </div>
+          {c.titles.length > 0 && (
+            <div style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "5px 12px", fontSize: 14, fontStyle: "italic", color: "#b8a678", borderRadius: 2 }}>
+              {c.titles[Math.min(count, c.titles.length - 1)]}
+            </div>
+          )}
           {/* XP bar */}
           <div style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "6px 12px 8px", borderRadius: 2 }}>
             <div className="cinzel" style={{ fontSize: 10, letterSpacing: ".18em", color: "#9c8a5e", marginBottom: 4 }}>
-              XP {s.xp} / {XP_MAX}
+              XP {xp} / {XP_MAX}
             </div>
             <div style={{ height: 5, background: "#241708", borderRadius: 3, overflow: "hidden", border: "1px solid #3a2d14" }}>
               <div
                 style={{
                   height: "100%",
-                  width: `${Math.min(100, (s.xp / XP_MAX) * 100)}%`,
+                  width: `${XP_MAX > 0 ? Math.min(100, (xp / XP_MAX) * 100) : 0}%`,
                   background: "linear-gradient(90deg, #8a6420, #e8b95c)",
                   transition: "width .8s cubic-bezier(.22,1,.36,1)",
                 }}
@@ -107,10 +114,10 @@ export function Hud() {
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <div className="cinzel" style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "4px 10px", fontSize: 11, letterSpacing: ".12em", color: "#c7b485", borderRadius: 2 }}>
-              LOST PAGES {pagesN}/{LOST_PAGES.length}
+              LOST PAGES {pagesN}/{c.lostPages.length}
             </div>
             <div className="cinzel" style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "4px 10px", fontSize: 11, letterSpacing: ".12em", color: beaconsN > 0 ? "#e8b95c" : "#c7b485", borderRadius: 2 }}>
-              BEACONS {beaconsN}/{BEACONS.length}
+              BEACONS {beaconsN}/{c.beacons.length}
             </div>
           </div>
         </div>

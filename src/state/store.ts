@@ -2,7 +2,8 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { BEACONS, LOST_PAGES, REGIONS, TITLES, XP, type Tone } from "@/data/content";
+import { type Tone } from "@/data/content";
+import { content } from "@/state/content";
 import { audio } from "@/audio/engine";
 import { voice } from "@/audio/voice";
 
@@ -29,11 +30,11 @@ interface GameState {
   toasts: Toast[];
   overview: boolean;
 
-  // progression
+  // progression — xp is intentionally NOT stored: it is derived from these
+  // via xpEarned() so admin changes to xp_rules rescale every save consistently
   visited: Record<string, boolean>;
   pages: Record<number, boolean>;
   beacons: Record<number, boolean>;
-  xp: number;
 
   // settings
   tone: Tone;
@@ -98,7 +99,6 @@ export const useGame = create<GameState>()(
       visited: {},
       pages: {},
       beacons: {},
-      xp: 0,
 
       tone: "common",
       cursor: "ring",
@@ -129,7 +129,8 @@ export const useGame = create<GameState>()(
       },
 
       openRegion: (id) => {
-        const r = REGIONS.find((x) => x.id === id);
+        const c = content();
+        const r = c.regions.find((x) => x.id === id);
         if (!r) return;
         const s = get();
         const isNew = !s.visited[id];
@@ -139,18 +140,19 @@ export const useGame = create<GameState>()(
           regionIsNew: isNew,
           visited: { ...s.visited, [id]: true },
           questOpen: false,
-          xp: isNew ? s.xp + XP.region : s.xp,
         });
         if (isNew) {
           setTimeout(() => {
             get().toast("ARTIFACT CLAIMED", r.artifact.name);
+            const { regions, titles } = content();
             const count = Object.keys(get().visited).length;
-            if (count === REGIONS.length) {
+            if (count === regions.length) {
+              const finalTitle = titles[titles.length - 1];
               setTimeout(
                 () =>
                   get().toast(
                     "JOURNEY COMPLETE",
-                    "All five lands charted — title earned: " + TITLES[5],
+                    "All lands charted" + (finalTitle ? " — title earned: " + finalTitle : ""),
                   ),
                 2400,
               );
@@ -227,23 +229,26 @@ export const useGame = create<GameState>()(
         const s = get();
         if (zone === s.weatherZone) return;
         audio.setZone(zone);
+        // '' counts as missing too — keep showing the previous caption
+        const caption = content().regions.find((r) => r.id === zone)?.caption;
         set({
           weatherZone: zone,
-          caption: zone !== "clear" ? (CAPTION_LOOKUP[zone] ?? s.caption) : s.caption,
+          caption: zone !== "clear" ? (caption || s.caption) : s.caption,
         });
       },
 
       collectPage: (id) => {
         const s = get();
         if (s.pages[id]) return;
+        const { lostPages } = content();
         const pages = { ...s.pages, [id]: true };
         const n = Object.keys(pages).length;
-        const done = n === LOST_PAGES.length;
+        const done = n === lostPages.length;
         audio.sfx("collect");
-        set({ pages, xp: s.xp + XP.page + (done ? XP.allPagesBonus : 0) });
+        set({ pages });
         get().toast(
           "LOST PAGE RECOVERED",
-          `A page of the Red Book — ${n} of ${LOST_PAGES.length} found`,
+          `A page of the Red Book — ${n} of ${lostPages.length} found`,
         );
         if (done)
           setTimeout(
@@ -255,12 +260,13 @@ export const useGame = create<GameState>()(
       lightBeacon: (id) => {
         const s = get();
         if (s.beacons[id]) return;
-        const b = BEACONS.find((x) => x.id === id);
+        const c = content();
+        const b = c.beacons.find((x) => x.id === id);
         const beacons = { ...s.beacons, [id]: true };
         const n = Object.keys(beacons).length;
-        const done = n === BEACONS.length;
+        const done = n === c.beacons.length;
         audio.sfx("chime");
-        set({ beacons, xp: s.xp + XP.beacon + (done ? XP.allBeaconsBonus : 0) });
+        set({ beacons });
         get().toast("THE BEACON IS LIT", `${b?.name ?? "A beacon"} answers with fire`);
         if (done) {
           setTimeout(
@@ -279,7 +285,6 @@ export const useGame = create<GameState>()(
           visited: {},
           pages: {},
           beacons: {},
-          xp: 0,
           region: null,
           questOpen: false,
           phase: "cover",
@@ -298,7 +303,6 @@ export const useGame = create<GameState>()(
         visited: s.visited,
         pages: s.pages,
         beacons: s.beacons,
-        xp: s.xp,
         tone: s.tone,
         cursor: s.cursor,
         muted: s.muted,
@@ -308,14 +312,6 @@ export const useGame = create<GameState>()(
     },
   ),
 );
-
-const CAPTION_LOOKUP: Record<string, string> = {
-  shire: "The air smells of pipe-weed and cut grass",
-  elf: "Sunlight breaks through — the Elves are singing",
-  dwarf: "Forge-smoke and stone-dust on the wind",
-  gondor: "Silver trumpets sound from the White City",
-  mordor: "The sky darkens. The Eye is watching.",
-};
 
 /** Read state outside React (three.js loops). */
 export const game = useGame.getState;

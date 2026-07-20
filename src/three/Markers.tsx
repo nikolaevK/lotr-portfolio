@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { REGIONS, toWorldX, toWorldZ, type Region } from "@/data/content";
+import { toWorldX, toWorldZ, type Region } from "@/data/content";
+import { useContent } from "@/state/content";
 import { heightAt } from "@/three/noise";
 import { morph } from "@/three/Terrain";
 import { useGame } from "@/state/store";
@@ -177,9 +178,10 @@ function Marker({ region }: { region: Region }) {
 }
 
 export function Markers() {
+  const regions = useContent((c) => c.regions);
   return (
     <group>
-      {REGIONS.map((r) => (
+      {regions.map((r) => (
         <Marker key={r.id} region={r} />
       ))}
     </group>

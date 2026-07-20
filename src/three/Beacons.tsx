@@ -3,7 +3,8 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { BEACONS, toWorldX, toWorldZ, type Beacon } from "@/data/content";
+import { toWorldX, toWorldZ, type Beacon } from "@/data/content";
+import { useContent } from "@/state/content";
 import { heightAt } from "@/three/noise";
 import { morph } from "@/three/Terrain";
 import { useGame } from "@/state/store";
@@ -60,9 +61,10 @@ function BeaconPyre({ beacon }: { beacon: Beacon }) {
 }
 
 export function Beacons() {
+  const beacons = useContent((c) => c.beacons);
   return (
     <group>
-      {BEACONS.map((b) => (
+      {beacons.map((b) => (
         <BeaconPyre key={b.id} beacon={b} />
       ))}
     </group>

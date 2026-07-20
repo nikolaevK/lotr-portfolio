@@ -176,3 +176,10 @@ button {
     display: none;
   }
 }
+
+/* the character niche folds away on narrow scrolls */
+@media (max-width: 700px) {
+  .scroll-char-rail {
+    display: none !important;
+  }
+}

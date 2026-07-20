@@ -1,13 +1,14 @@
 "use client";
 
-import { REGIONS, toWorldX, toWorldZ } from "@/data/content";
+import { toWorldX, toWorldZ } from "@/data/content";
+import { content } from "@/state/content";
 import { runtime } from "@/game/runtime";
 import { useGame } from "@/state/store";
 import { audio } from "@/audio/engine";
 
 /** Fly the dragon to a region (marker / quest-log click — concept parity). */
 export function travelTo(regionId: string) {
-  const r = REGIONS.find((x) => x.id === regionId);
+  const r = content().regions.find((x) => x.id === regionId);
   if (!r) return;
   audio.sfx("tick");
   useGame.setState({ questOpen: false });

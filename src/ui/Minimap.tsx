@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { MAP_W, MAP_H, REGIONS, toWorldX, toWorldZ } from "@/data/content";
+import { MAP_W, MAP_H } from "@/data/content";
+import { content } from "@/state/content";
 import { runtime } from "@/game/runtime";
 import { useGame } from "@/state/store";
 import { travelToPoint } from "@/game/actions";
@@ -38,7 +39,7 @@ export function Minimap() {
       ctx.fillStyle = "rgba(20,13,6,.18)";
       ctx.fillRect(0, 0, W, H);
       // region dots
-      for (const r of REGIONS) {
+      for (const r of content().regions) {
         const x = r.x * W;
         const y = r.y * H;
         ctx.beginPath();

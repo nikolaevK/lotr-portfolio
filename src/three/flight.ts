@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { EDGE, MAP_W, MAP_H, REGIONS, SEA_LEVEL, toWorldX, toWorldZ } from "@/data/content";
+import { EDGE, MAP_W, MAP_H, SEA_LEVEL, toWorldX, toWorldZ } from "@/data/content";
+import { content } from "@/state/content";
 import { heightAt } from "@/three/noise";
 import { runtime } from "@/game/runtime";
 import { input, moveAxes } from "@/input/controls";
@@ -198,7 +199,7 @@ export function stepFlight(dt: number, frozen: boolean, t: FlightTuning, fs: Fli
 
   // ── region proximity (opens tales, as in the concept) ──
   if (!frozen) {
-    for (const r of REGIONS) {
+    for (const r of content().regions) {
       const d = Math.hypot(toWorldX(r.x) - runtime.pos.x, toWorldZ(r.y) - runtime.pos.z);
       if (runtime.cooldown === r.id) {
         if (d > RELEASE_R) runtime.cooldown = null;

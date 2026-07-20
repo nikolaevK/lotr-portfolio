@@ -8,7 +8,8 @@ import { input } from "@/input/controls";
 import { game } from "@/state/store";
 import { morph } from "@/three/Terrain";
 import { audio } from "@/audio/engine";
-import { BEACONS, toWorldX, toWorldZ } from "@/data/content";
+import { toWorldX, toWorldZ } from "@/data/content";
+import { useContent } from "@/state/content";
 import { heightAt } from "@/three/noise";
 
 const RING_LIFE = 0.8;
@@ -80,14 +81,15 @@ export function EagleCry() {
     return { geo, mat, positions, life, vels, cursor: 0 };
   }, []);
 
+  const beacons = useContent((c) => c.beacons);
   const beaconWorld = useMemo(
     () =>
-      BEACONS.map((b) => {
+      beacons.map((b) => {
         const x = toWorldX(b.x);
         const z = toWorldZ(b.y);
         return { id: b.id, x, z, y: heightAt(x, z) };
       }),
-    [],
+    [beacons],
   );
 
   useFrame((_, dtRaw) => {

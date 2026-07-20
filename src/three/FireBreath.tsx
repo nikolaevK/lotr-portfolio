@@ -4,7 +4,8 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { runtime } from "@/game/runtime";
-import { BEACONS, toWorldX, toWorldZ } from "@/data/content";
+import { toWorldX, toWorldZ } from "@/data/content";
+import { useContent } from "@/state/content";
 import { heightAt } from "@/three/noise";
 import { game, useGame } from "@/state/store";
 
@@ -64,9 +65,10 @@ export function FireBreath() {
     return { geo, mat, positions, life, vels, spawnAcc: 0, cursor: 0 };
   }, []);
 
+  const beacons = useContent((c) => c.beacons);
   const beaconWorld = useMemo(
     () =>
-      BEACONS.map((b) => ({
+      beacons.map((b) => ({
         id: b.id,
         x: toWorldX(b.x),
         z: toWorldZ(b.y),
@@ -74,7 +76,7 @@ export function FireBreath() {
           return heightAt(this.x, this.z);
         },
       })),
-    [],
+    [beacons],
   );
 
   useFrame((_, dtRaw) => {

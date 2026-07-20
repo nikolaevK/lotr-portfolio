@@ -3,7 +3,8 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { LOST_PAGES, toWorldX, toWorldZ } from "@/data/content";
+import { toWorldX, toWorldZ } from "@/data/content";
+import { useContent } from "@/state/content";
 import { heightAt } from "@/three/noise";
 import { morph } from "@/three/Terrain";
 import { runtime } from "@/game/runtime";
@@ -37,17 +38,18 @@ function makePageTexture() {
 
 export function LostPages() {
   const pages = useGame((s) => s.pages);
+  const lostPages = useContent((c) => c.lostPages);
   const texture = useMemo(makePageTexture, []);
   const refs = useRef<(THREE.Group | null)[]>([]);
 
   const spots = useMemo(
     () =>
-      LOST_PAGES.map((p) => {
+      lostPages.map((p) => {
         const x = toWorldX(p.x);
         const z = toWorldZ(p.y);
         return { id: p.id, x, z, baseY: Math.max(heightAt(x, z), 2) };
       }),
-    [],
+    [lostPages],
   );
 
   const pageMat = useMemo(
