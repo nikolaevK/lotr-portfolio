@@ -259,7 +259,7 @@ function ScrollBody({ region, isNew }: { region: RegionContent; isNew: boolean }
       {/* body: character niche floats beside the words */}
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
         {region.characters.length > 0 && (
-          <aside className="scroll-char-rail" style={{ flex: "0 0 168px", display: "flex", flexDirection: "column", gap: 16, paddingTop: 4 }}>
+          <aside className="scroll-char-rail" style={{ flex: "0 0 216px", display: "flex", flexDirection: "column", gap: 16, paddingTop: 4 }}>
             {region.characters.map((c) => (
               <CharacterNiche key={c.slug} c={c} glyph={region.glyph} />
             ))}

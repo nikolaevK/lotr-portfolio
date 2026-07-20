@@ -1,9 +1,10 @@
 "use client";
 
-import { Component, Suspense, useRef, type ReactNode } from "react";
+import { Component, Suspense, useMemo, useRef, type ReactNode } from "react";
 import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { Group } from "three";
+import { normalizeToHeight } from "@/three/modelUtils";
 import type { CharacterInfo } from "@/state/content";
 
 /**
@@ -15,12 +16,19 @@ import type { CharacterInfo } from "@/state/content";
 function Turntable({ url, scale }: { url: string; scale: number }) {
   const gltf = useLoader(GLTFLoader, url);
   const ref = useRef<Group>(null);
+  // clone: the cached scene object may simultaneously stand in the 3D world
+  // (Figures.tsx), and an Object3D can only live in one scene graph
+  const scene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
+  // fit any source model into the niche; DB `scale` is an artistic multiplier
+  const fit = useMemo(() => normalizeToHeight(scene, 1.9), [scene]);
   useFrame((_, dt) => {
     if (ref.current) ref.current.rotation.y += dt * 0.55;
   });
   return (
-    <group ref={ref} scale={scale}>
-      <primitive object={gltf.scene} />
+    <group ref={ref} position={[0, -0.95, 0]} scale={scale}>
+      <group scale={fit.scale} position={fit.offset}>
+        <primitive object={scene} />
+      </group>
     </group>
   );
 }
@@ -83,22 +91,13 @@ export function CharacterNiche({ c, glyph }: { c: CharacterInfo; glyph: string }
 
   return (
     <figure style={{ margin: 0, textAlign: "center" }}>
-      <div
-        style={{
-          height: 172,
-          border: "3px double #8a6420",
-          borderRadius: 3,
-          background:
-            "radial-gradient(ellipse at 50% 30%, rgba(255,246,220,.55), rgba(201,150,60,.10) 70%), rgba(0,0,0,.05)",
-          boxShadow: "inset 0 0 26px rgba(90,60,20,.28)",
-          overflow: "hidden",
-        }}
-      >
-        {c.modelUrl ? (
-          <ModelBoundary fallback={placeholder}>
+      {c.modelUrl ? (
+        // the figure stands free on the parchment — no frame, no backdrop
+        <div style={{ height: 264, margin: "-10px -14px -6px" }}>
+          <ModelBoundary fallback={<div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>{placeholder}</div>}>
             <Canvas
-              dpr={1}
-              camera={{ position: [0, 1.1, 3.1], fov: 38 }}
+              dpr={[1, 1.5]}
+              camera={{ position: [0, 0.05, 2.85], fov: 38 }}
               gl={{ antialias: true, alpha: true, powerPreference: "low-power" }}
               style={{ width: "100%", height: "100%" }}
             >
@@ -110,10 +109,25 @@ export function CharacterNiche({ c, glyph }: { c: CharacterInfo; glyph: string }
               </Suspense>
             </Canvas>
           </ModelBoundary>
-        ) : (
-          placeholder
-        )}
-      </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            height: 172,
+            border: "3px double #8a6420",
+            borderRadius: 3,
+            background:
+              "radial-gradient(ellipse at 50% 30%, rgba(255,246,220,.55), rgba(201,150,60,.10) 70%), rgba(0,0,0,.05)",
+            boxShadow: "inset 0 0 26px rgba(90,60,20,.28)",
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {placeholder}
+        </div>
+      )}
       <figcaption style={{ marginTop: 7 }}>
         <div className="cinzel" style={{ fontSize: 12.5, letterSpacing: ".08em", color: "#2c1f0d" }}>{c.name}</div>
         {c.caption && (

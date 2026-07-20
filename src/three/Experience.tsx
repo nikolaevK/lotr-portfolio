@@ -17,6 +17,7 @@ import { Weather } from "@/three/Weather";
 import { ZoneParticles } from "@/three/Particles";
 import { GodRays } from "@/three/GodRays";
 import { Landmarks } from "@/three/Landmarks";
+import { Figures } from "@/three/Figures";
 import { Waterways } from "@/three/Waterways";
 import { Markers } from "@/three/Markers";
 import { Beacons } from "@/three/Beacons";
@@ -57,6 +58,7 @@ export function Experience() {
         <Clouds />
         <Waterways />
         <Landmarks />
+        <Figures />
         <Markers />
         <Beacons />
         <LostPages />

@@ -282,7 +282,7 @@ const REGIONS = [
     ],
     artifact: ["Scroll of Reckoning", "Grants +10 to reading numbers and telling their story"],
     links: [{ education_id: 1 }],
-    character: ["bilbo", "Bilbo Baggins", "The scholar of Bag End — every ledger tells a story"],
+    character: ["bilbo", "Bilbo Baggins", "The scholar of Bag End — every ledger tells a story", "/models/bilbo.glb"],
   },
   {
     id: 2, slug: "elf", place: "Rivendell & Lothlórien", glyph: "E", ring: "#3c8a7a", u: 0.502, v: 0.252,
@@ -298,7 +298,7 @@ const REGIONS = [
     ],
     artifact: ["Tome of the Eldar", "Its pages are TypeScript; its margins, well-typed"],
     links: [{ experience_id: 3 }, { project_id: 5 }, { project_id: 6 }, { project_id: 7 }],
-    character: ["elrond", "Elrond of Rivendell", "Keeper of the old lore, and of well-typed pages"],
+    character: ["elrond", "Elrond of Rivendell", "Keeper of the old lore, and of well-typed pages", "/models/elrond.glb"],
   },
   {
     id: 3, slug: "dwarf", place: "Erebor & the Iron Hills", glyph: "D", ring: "#b8722c", u: 0.665, v: 0.236,
@@ -315,7 +315,7 @@ const REGIONS = [
     ],
     artifact: ["Hammer of the Iron Hills", "Proof that the bearer can build with hands as well as keyboards"],
     links: [{ experience_id: 2 }, { experience_id: 4 }],
-    character: ["gimli", "Gimli, son of Glóin", "Stone-craft, tamed lightning, and no patience for shoddy work"],
+    character: ["thorin", "Thorin Oakenshield", "The King under the Mountain — stone-craft, tamed lightning, and no patience for shoddy work", "/models/thorin.glb"],
   },
   {
     id: 4, slug: "gondor", place: "Minas Tirith", glyph: "G", ring: "#c9c9c9", u: 0.607, v: 0.607,
@@ -332,7 +332,7 @@ const REGIONS = [
     ],
     artifact: ["Palantír of the Tower", "A seeing-stone that shows spend, ROAS, and every broken pixel"],
     links: [{ experience_id: 1 }, { project_id: 2 }, { project_id: 3 }, { project_id: 4 }],
-    character: ["aragorn", "Aragorn, King Elessar", "One keeper builds the citadel's every working"],
+    character: ["aragorn", "Aragorn, King Elessar", "One keeper builds the citadel's every working", "/models/strider.glb"],
   },
   {
     id: 5, slug: "mordor", place: "Mordor", glyph: "M", ring: "#a83232", u: 0.713, v: 0.588,
@@ -349,7 +349,7 @@ const REGIONS = [
     ],
     artifact: ["The Undimmed Light", "A light in dark places, when all other job boards go out"],
     links: [],
-    character: ["samwise", "Samwise the Brave", "The path was the only way through — and he walked it"],
+    character: ["sauron", "Sauron, the Dark Lord", "The Eye watched the road — and the walker did not turn back", "/models/sauron.glb"],
   },
 ];
 // display order matches the bundled fallback (src/data/content.ts REGIONS) so
@@ -370,8 +370,8 @@ REGIONS.forEach((r) => {
       r.id, l.experience_id ?? null, l.education_id ?? null, l.project_id ?? null,
     ]),
   );
-  const [slug, name, cap] = r.character;
-  run(`INSERT INTO characters (region_id, slug, name, caption, sort_order) VALUES (?,?,?,?,0)`, [r.id, slug, name, cap]);
+  const [slug, name, cap, model] = r.character;
+  run(`INSERT INTO characters (region_id, slug, name, caption, model_url, sort_order) VALUES (?,?,?,?,?,0)`, [r.id, slug, name, cap, model]);
 });
 
 // ── titles, pages, beacons, xp, settings, voice lines ────────────────────────
