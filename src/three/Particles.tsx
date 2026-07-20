@@ -133,7 +133,12 @@ function ZoneCloud({ def }: { def: ZoneDef }) {
   useFrame((_, dt) => {
     const m = matRef.current ?? mat;
     m.uniforms.uTime.value += Math.min(dt, 0.05);
-    m.uniforms.uCenter.value.copy(runtime.pos);
+    // center on the viewed point so a panned map view shows its zone's motes
+    m.uniforms.uCenter.value.set(
+      runtime.pos.x + runtime.overviewPan.x,
+      runtime.pos.y,
+      runtime.pos.z + runtime.overviewPan.y,
+    );
     m.uniforms.uWind.value.set(runtime.wind.x, runtime.wind.y);
     const w = (runtime.zoneWeights[def.zone] ?? 0) * morph.value;
     m.uniforms.uOpacity.value = w * (def.additive ? 0.9 : 0.75);

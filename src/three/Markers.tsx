@@ -138,8 +138,10 @@ function Marker({ region }: { region: Region }) {
     }
   });
 
-  const travel = (e: { stopPropagation: () => void }) => {
+  const travel = (e: { stopPropagation: () => void; delta: number }) => {
     e.stopPropagation();
+    // only map view has a drag gesture to disambiguate from a click
+    if (useGame.getState().overview && e.delta > 6) return;
     travelTo(region.id);
   };
 

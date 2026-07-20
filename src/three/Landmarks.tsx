@@ -3,7 +3,7 @@
 import { useMemo, useRef } from "react";
 import { useFrame, type ThreeElements } from "@react-three/fiber";
 import * as THREE from "three";
-import { MAP_W, MAP_H, SEA_LEVEL, toWorldX, toWorldZ } from "@/data/content";
+import { MAP_W, MAP_H, SEA_LEVEL, SITES, toWorldX, toWorldZ } from "@/data/content";
 import { heightAt } from "@/three/noise";
 import { morph } from "@/three/Terrain";
 import { Plume } from "@/three/Particles";
@@ -170,7 +170,7 @@ function Hobbiton() {
     [],
   );
   return (
-    <Grounded u={0.352} v={0.258}>
+    <Grounded u={SITES.hobbiton.u} v={SITES.hobbiton.v}>
       {/* twin grassy mounds — Hobbiton hill & Bagshot Row */}
       <mesh material={M.grass} position={[0, 2.2, 0]} castShadow receiveShadow>
         <sphereGeometry args={[18, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
@@ -294,7 +294,7 @@ function Waterfall() {
 function Rivendell() {
   return (
     <>
-      <Grounded u={0.502} v={0.252}>
+      <Grounded u={SITES.rivendell.u} v={SITES.rivendell.v}>
         {/* the Last Homely House — terraced halls with open colonnades */}
         {[
           { x: 0, z: 0, w: 16, d: 10, y: 0, h: 4.5 },
@@ -334,7 +334,7 @@ function Rivendell() {
         <Lamp color="#ffe9b0" intensity={60} distance={70} position={[0, 16, 0]} decay={2} />
       </Grounded>
       {/* Lothlórien — golden mallorn wood with flets and elf-lanterns */}
-      <Grounded u={0.548} v={0.372}>
+      <Grounded u={SITES.lorien.u} v={SITES.lorien.v}>
         {[
           [0, 0, 4.6], [16, 9, 3.4], [-14, 12, 3.6], [4, -16, 3.0], [-9, -11, 2.6], [18, -7, 2.3],
         ].map(([x, z, s], i) => (
@@ -432,7 +432,7 @@ function Erebor() {
   );
   return (
     <>
-      <Grounded u={0.664} v={0.240}>
+      <Grounded u={SITES.erebor.u} v={SITES.erebor.v}>
        <group scale={1.35}>
         {/* stepped gate */}
         <mesh material={M.darkStone} position={[-7.5, 10, 0]} castShadow>
@@ -529,7 +529,7 @@ function MinasTirith() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
-    <Grounded u={0.607} v={0.607}>
+    <Grounded u={SITES.minastirith.u} v={SITES.minastirith.v}>
       {/* banners of the White Tree on the tiers */}
       {[1, 3, 5].map((i) => (
         <group key={"bn" + i} position={[Math.cos(i * 1.8) * (tiers[i] - 0.6), i * 4.6 + 6.2, Math.sin(i * 1.8) * (tiers[i] - 0.6)]}>
@@ -638,7 +638,7 @@ function BaradDur() {
   });
 
   return (
-    <Grounded u={0.727} v={0.583}>
+    <Grounded u={SITES.baraddur.u} v={SITES.baraddur.v}>
       {/* tapering black tower with buttress fins */}
       {[0, 1, 2, 3, 4].map((i) => (
         <mesh key={i} material={M.blackTower} position={[0, 10 + i * 17, 0]} castShadow>
@@ -703,8 +703,8 @@ function BaradDur() {
 }
 
 function MountDoom() {
-  const cx = toWorldX(0.700);
-  const cz = toWorldZ(0.585);
+  const cx = toWorldX(SITES.mountdoom.u);
+  const cz = toWorldZ(SITES.mountdoom.v);
   const lavaGroup = useRef<THREE.Group>(null);
 
   // lava rivulets draped over the real terrain shape (world coords, y scaled by morph)
@@ -758,7 +758,7 @@ function MountDoom() {
       <group ref={lavaGroup}>
         <mesh geometry={lavaGeo} material={M.lavaFlow} />
       </group>
-      <Grounded u={0.700} v={0.585}>
+      <Grounded u={SITES.mountdoom.u} v={SITES.mountdoom.v}>
         {/* crater glow (Grounded anchors at the crater floor) */}
         <mesh material={M.lava} position={[0, 1.8, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <circleGeometry args={[9, 18]} />
@@ -790,7 +790,7 @@ function RohanHouse({ x, z, a, s = 1 }: { x: number; z: number; a: number; s?: n
 
 function Edoras() {
   return (
-    <Grounded u={0.512} v={0.542}>
+    <Grounded u={SITES.edoras.u} v={SITES.edoras.v}>
       {/* Meduseld, the Golden Hall */}
       <group position={[0, 4.5, 0]} rotation={[0, 0.4, 0]}>
         {/* carved plinth and stair */}
@@ -867,7 +867,7 @@ function Edoras() {
 // ── Isengard: the tower of Orthanc in its ring ───────────────────────────────
 function Orthanc() {
   return (
-    <Grounded u={0.489} v={0.489}>
+    <Grounded u={SITES.orthanc.u} v={SITES.orthanc.v}>
       <mesh material={M.obsidian} position={[0, 23, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
         <cylinderGeometry args={[3.2, 5.0, 46, 4]} />
       </mesh>
@@ -952,7 +952,7 @@ function Weathertop() {
     }));
   }, []);
   return (
-    <Grounded u={0.452} v={0.261}>
+    <Grounded u={SITES.weathertop.u} v={SITES.weathertop.v}>
       {cols.map((c, i) => (
         <mesh
           key={i}
@@ -1035,7 +1035,7 @@ function GreyHavens() {
         </mesh>
       </group>
       {/* Mithlond — the quays at the head of the Gulf */}
-      <Grounded u={0.288} v={0.278}>
+      <Grounded u={SITES.havens.u} v={SITES.havens.v}>
         <mesh material={M.whiteStone} position={[0, 1.2, 0]} rotation={[0, -0.35, 0]} castShadow>
           <boxGeometry args={[24, 2.4, 6]} />
         </mesh>
@@ -1228,7 +1228,7 @@ function MoriaGate() {
     if (glowRef.current) glowRef.current.intensity = 26 * breathe;
   });
   return (
-    <Grounded u={0.507} v={0.352}>
+    <Grounded u={SITES.moria.u} v={SITES.moria.v}>
       {/* the sheer cliff-wall of the Silvertine, gate face looking west */}
       <mesh material={M.darkStone} position={[10, 16, 0]} castShadow>
         <boxGeometry args={[16, 44, 46]} />

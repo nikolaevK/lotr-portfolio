@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { MAP_W, MAP_H, REGIONS, SEA_LEVEL, toWorldX, toWorldZ } from "@/data/content";
+import { EDGE, MAP_W, MAP_H, REGIONS, SEA_LEVEL, toWorldX, toWorldZ } from "@/data/content";
 import { heightAt } from "@/three/noise";
 import { runtime } from "@/game/runtime";
 import { input, moveAxes } from "@/input/controls";
@@ -160,8 +160,8 @@ export function stepFlight(dt: number, frozen: boolean, t: FlightTuning, fs: Fli
       turnRate = (diff * k) / Math.max(dt, 1e-4);
     }
   }
-  runtime.pos.x = THREE.MathUtils.clamp(runtime.pos.x + runtime.vel.x * dt, 60, MAP_W - 60);
-  runtime.pos.z = THREE.MathUtils.clamp(runtime.pos.z + runtime.vel.z * dt, 55, MAP_H - 55);
+  runtime.pos.x = THREE.MathUtils.clamp(runtime.pos.x + runtime.vel.x * dt, EDGE.x, MAP_W - EDGE.x);
+  runtime.pos.z = THREE.MathUtils.clamp(runtime.pos.z + runtime.vel.z * dt, EDGE.z, MAP_H - EDGE.z);
   runtime.speed = Math.hypot(runtime.vel.x, runtime.vel.z);
   fs.speed01 = Math.min(runtime.speed / t.boost, 1);
   fs.turnSmooth += (turnRate - fs.turnSmooth) * Math.min(1, 6 * dt);

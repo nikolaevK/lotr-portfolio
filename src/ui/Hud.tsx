@@ -254,7 +254,8 @@ export function Hud() {
         >
           {s.overview ? (
             <>
-              Map view — <b className="cinzel" style={{ color: "#e2c682" }}>W A S D</b> glide over the map ·{" "}
+              Map view — drag to roam · scroll to zoom · hover a place for its tale ·{" "}
+              <b className="cinzel" style={{ color: "#e2c682" }}>W A S D</b> glide ·{" "}
               <b className="cinzel" style={{ color: "#e2c682" }}>M</b> to ride on
             </>
           ) : (

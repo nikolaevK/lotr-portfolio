@@ -49,6 +49,9 @@ interface GameState {
   // movie-style subtitle while a voice line plays
   voiceCaption: string | null;
 
+  // map-view hover tooltip (place under the cursor)
+  mapHover: { title: string; text: string } | null;
+
   // actions
   setReady: () => void;
   openCover: () => void;
@@ -66,6 +69,7 @@ interface GameState {
   toggleOverview: () => void;
   setMount: (m: "dragon" | "eagle") => void;
   setWeatherZone: (zone: string) => void;
+  setMapHover: (h: { title: string; text: string } | null) => void;
   collectPage: (id: number) => void;
   lightBeacon: (id: number) => void;
   escape: () => void;
@@ -105,6 +109,7 @@ export const useGame = create<GameState>()(
       weatherZone: "clear",
       caption: "",
       voiceCaption: null,
+      mapHover: null,
 
       setReady: () => set({ ready: true }),
 
@@ -201,8 +206,10 @@ export const useGame = create<GameState>()(
 
       toggleOverview: () => {
         audio.sfx("tick");
-        set((s) => ({ overview: !s.overview }));
+        set((s) => ({ overview: !s.overview, mapHover: null }));
       },
+
+      setMapHover: (h) => set({ mapHover: h }),
 
       setMount: (m) => {
         if (m === get().mount) return;

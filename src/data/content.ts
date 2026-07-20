@@ -328,3 +328,33 @@ export const XP_MAX =
 // Convenience: map-fraction → world coords
 export const toWorldX = (u: number) => u * MAP_W;
 export const toWorldZ = (v: number) => v * MAP_H;
+
+// World-edge margin the steed (flight.ts) and the map-view pan share
+export const EDGE = { x: 60, z: 55 };
+
+// Map-view camera geometry — CameraRig places the eye with it, MapExplore
+// derives drag calibration from it; they must agree
+export const OVERVIEW_CAM = { height: 560, back: 290 };
+
+/**
+ * Notable places — the single source for landmark anchors (Landmarks.tsx),
+ * map-view hover volumes and tooltips (MapExplore.tsx).
+ * r = hover radius in world units; radii are chosen so no two sites overlap
+ * (overlapping hover volumes fight over the one tooltip).
+ */
+export interface MapSite { u: number; v: number; r: number; title: string; text: string }
+
+export const SITES = {
+  hobbiton: { u: 0.352, v: 0.258, r: 70, title: "Hobbiton", text: "A well-ordered land of pipe-smoke, second breakfasts and round green doors. The beacon here marks a chapter — click it to travel." },
+  rivendell: { u: 0.502, v: 0.252, r: 60, title: "Rivendell", text: "The Last Homely House east of the Sea — counsel and song in the Hidden Valley. The beacon here marks a chapter — click it to travel." },
+  lorien: { u: 0.548, v: 0.372, r: 55, title: "Lothlórien", text: "The Golden Wood, where mallorn leaves fall like coins of light." },
+  moria: { u: 0.507, v: 0.352, r: 55, title: "The West-gate of Moria", text: "Doors of Durin, Lord of Moria. Speak, friend, and enter." },
+  erebor: { u: 0.664, v: 0.240, r: 70, title: "Erebor", text: "The Lonely Mountain — dwarven halls beneath the peak, and a hoard long remembered. The beacon here marks a chapter — click it to travel." },
+  minastirith: { u: 0.607, v: 0.607, r: 65, title: "Minas Tirith", text: "The White City, seven-walled, ever watching the East. The beacon here marks a chapter — click it to travel." },
+  baraddur: { u: 0.727, v: 0.583, r: 40, title: "Barad-dûr", text: "The Dark Tower. The Eye turns hither — do not linger." },
+  mountdoom: { u: 0.700, v: 0.585, r: 40, title: "Mount Doom", text: "Orodruin, the Mountain of Fire, where the Ring was forged and unmade." },
+  edoras: { u: 0.512, v: 0.542, r: 55, title: "Edoras", text: "Meduseld, the Golden Hall — seat of the Lords of the Mark." },
+  orthanc: { u: 0.489, v: 0.489, r: 55, title: "Isengard", text: "The tower of Orthanc, ringed by the wall and pits of Saruman." },
+  weathertop: { u: 0.452, v: 0.261, r: 50, title: "Weathertop", text: "Amon Sûl — a broken watchtower, older than the kingdoms of Men." },
+  havens: { u: 0.288, v: 0.278, r: 60, title: "The Grey Havens", text: "Mithlond, whence the white ships sail into the West." },
+} satisfies Record<string, MapSite>;

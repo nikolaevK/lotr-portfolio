@@ -9,6 +9,7 @@ import { Toasts } from "@/ui/Toasts";
 import { Raven } from "@/ui/Raven";
 import { Minimap } from "@/ui/Minimap";
 import { TouchControls } from "@/ui/TouchControls";
+import { MapTooltip } from "@/ui/MapTooltip";
 
 export function Overlay() {
   return (
@@ -32,6 +33,7 @@ export function Overlay() {
         </WithPointer>
         <Raven />
         <Toasts />
+        <MapTooltip />
       </div>
     </div>
   );

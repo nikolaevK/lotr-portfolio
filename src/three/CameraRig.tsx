@@ -3,9 +3,9 @@
 import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { MAP_W, MAP_H } from "@/data/content";
+import { MAP_W, MAP_H, EDGE, OVERVIEW_CAM } from "@/data/content";
 import { runtime } from "@/game/runtime";
-import { input, mouse } from "@/input/controls";
+import { input, mouse, moveAxes } from "@/input/controls";
 import { useGame } from "@/state/store";
 import { morph } from "@/three/Terrain";
 import { heightAt } from "@/three/noise";
@@ -42,8 +42,22 @@ export function CameraRig() {
       _look.set(MAP_W * 0.52, 0, MAP_H * 0.38);
       stiffness = 1.2;
     } else if (s.overview) {
-      _eye.copy(runtime.pos).add(_look.set(0, 560, 290));
+      // steering (WASD) or autopilot eases the mouse-panned view back onto the
+      // steed — never while the user is actively holding a drag
+      if (!runtime.overviewDragging) {
+        const axes = moveAxes();
+        if (Math.abs(axes.x) + Math.abs(axes.y) > 0.1 || runtime.autoTarget)
+          runtime.overviewPan.multiplyScalar(Math.exp(-3.5 * dt));
+      }
+      // keep the viewed point on the map even as the steed moves post-drag
+      const vx = THREE.MathUtils.clamp(runtime.pos.x + runtime.overviewPan.x, EDGE.x, MAP_W - EDGE.x);
+      const vz = THREE.MathUtils.clamp(runtime.pos.z + runtime.overviewPan.y, EDGE.z, MAP_H - EDGE.z);
+      runtime.overviewPan.set(vx - runtime.pos.x, vz - runtime.pos.z);
+      const zm = runtime.overviewZoom;
+      _eye.set(vx, runtime.pos.y + OVERVIEW_CAM.height * zm, vz + OVERVIEW_CAM.back * zm);
       _look.copy(runtime.pos).add(_fwd.multiplyScalar(46));
+      _look.x += runtime.overviewPan.x;
+      _look.z += runtime.overviewPan.y;
       stiffness = 2.2;
       targetFov = 50;
     } else {

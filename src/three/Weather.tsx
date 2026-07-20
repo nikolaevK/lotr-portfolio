@@ -105,13 +105,16 @@ export function Weather() {
     st.clock += dt;
     if (!scene.fog) scene.fog = st.fog;
 
-    // ── zone weights from dragon proximity (the concept's own pixel radii) ──
+    // ── zone weights from the viewed point (steed + map-view pan, so a
+    // panned map shows that place's weather; pan is zero outside map view) ──
+    const vx = runtime.pos.x + runtime.overviewPan.x;
+    const vz = runtime.pos.z + runtime.overviewPan.y;
     let bestZone = "clear";
     let bestD = Infinity;
     const weights = runtime.zoneWeights;
     let maxW = 0;
     for (const r of REGIONS) {
-      const d = Math.hypot(toWorldX(r.x) - runtime.pos.x, toWorldZ(r.y) - runtime.pos.z);
+      const d = Math.hypot(toWorldX(r.x) - vx, toWorldZ(r.y) - vz);
       let t = Math.max(0, 1 - d / 680);
       t = t * t * (3 - 2 * t);
       t *= morph.value;
@@ -186,8 +189,8 @@ export function Weather() {
     if (dir.current) {
       dir.current.color.copy(cur.sun);
       dir.current.intensity = cur.sunI;
-      dir.current.position.copy(runtime.pos).addScaledVector(SUN_DIR, 620);
-      dir.current.target.position.copy(runtime.pos);
+      dir.current.position.set(vx, runtime.pos.y, vz).addScaledVector(SUN_DIR, 620);
+      dir.current.target.position.set(vx, runtime.pos.y, vz);
       dir.current.target.updateMatrixWorld();
       dir.current.castShadow = quality === "high";
     }
@@ -208,9 +211,9 @@ export function Weather() {
         st.nextStrike = 4.5 + Math.random() * 6;
         st.flash = 1;
         runtime.shake = Math.max(runtime.shake, 0.55);
-        // jagged bolt near the dragon
-        const bx = runtime.pos.x + (Math.random() - 0.5) * 460;
-        const bz = runtime.pos.z + (Math.random() - 0.5) * 340;
+        // jagged bolt near the viewed point
+        const bx = vx + (Math.random() - 0.5) * 460;
+        const bz = vz + (Math.random() - 0.5) * 340;
         const gy = heightAt(bx, bz) * morph.value;
         const posAttr = boltGeo.getAttribute("position") as THREE.BufferAttribute;
         let px = bx;

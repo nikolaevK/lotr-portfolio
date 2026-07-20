@@ -28,6 +28,11 @@ export const runtime = {
   shake: 0,
   camPos: new THREE.Vector3(MAP_W * 0.42, 420, MAP_H * 0.95),
 
+  // map view (overview) mouse exploration — camera-only, dragon stays put
+  overviewPan: new THREE.Vector2(),
+  overviewZoom: 1,
+  overviewDragging: false,
+
   // ambience
   wind: new THREE.Vector2(1, 0.35).normalize(),
   windT: 0,
@@ -48,5 +53,8 @@ export const runtime = {
     this.cooldown = null;
     this.shake = 0;
     this.activeZone = "clear";
+    this.overviewPan.set(0, 0);
+    this.overviewZoom = 1;
+    this.overviewDragging = false;
   },
 };

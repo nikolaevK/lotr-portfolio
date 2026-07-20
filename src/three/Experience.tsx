@@ -23,6 +23,7 @@ import { Beacons } from "@/three/Beacons";
 import { LostPages } from "@/three/LostPages";
 import { FireBreath } from "@/three/FireBreath";
 import { VoiceTriggers } from "@/three/VoiceTriggers";
+import { MapExplore } from "@/three/MapExplore";
 
 export function Experience() {
   const quality = useGame((s) => s.quality);
@@ -65,6 +66,7 @@ export function Experience() {
         <GodRays zone="elf" color="#ffd76a" u={0.502} v={0.252} />
         <GodRays zone="gondor" color="#dfe8ff" u={0.607} v={0.607} />
         <VoiceTriggers />
+        <MapExplore />
         <CameraRig />
         {quality === "high" && (
           <EffectComposer multisampling={4}>
