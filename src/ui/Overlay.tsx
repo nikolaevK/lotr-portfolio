@@ -10,6 +10,7 @@ import { Raven } from "@/ui/Raven";
 import { Minimap } from "@/ui/Minimap";
 import { TouchControls } from "@/ui/TouchControls";
 import { MapTooltip } from "@/ui/MapTooltip";
+import { OrientationHint } from "@/ui/OrientationHint";
 
 export function Overlay() {
   return (
@@ -26,6 +27,7 @@ export function Overlay() {
           <Hud />
           <Minimap />
           <TouchControls />
+          <OrientationHint />
           <QuestLog />
           <ScrollPanel />
           <ContactModal />

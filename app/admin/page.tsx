@@ -469,6 +469,172 @@ function EntityPanel({ name }: { name: string }) {
   );
 }
 
+// ── résumés (PDF blobs — outside the generic entity system) ──────────────────
+
+interface ResumeRow {
+  id: number;
+  label: string;
+  file_path: string;
+  file_name: string | null;
+  is_default: number;
+  bytes: number | null;
+}
+
+function ResumePanel() {
+  const [rows, setRows] = useState<ResumeRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [label, setLabel] = useState("");
+  const [makeDefault, setMakeDefault] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [fileKey, setFileKey] = useState(0); // remounts the file input to clear it
+
+  const load = useCallback(() => {
+    api("/api/admin/resume")
+      .then((d) => setRows((d as { rows: ResumeRow[] }).rows))
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+  useEffect(load, [load]);
+
+  const upload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) {
+      setError("Choose a PDF first.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("label", label);
+      if (makeDefault) fd.append("is_default", "1");
+      // raw fetch: the api() helper forces a JSON content type on bodies
+      const res = await fetch("/api/admin/resume", { method: "POST", body: fd });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Upload failed (${res.status})`);
+      setLabel("");
+      setFile(null);
+      setMakeDefault(false);
+      setFileKey((k) => k + 1);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const act = async (path: string, init?: RequestInit) => {
+    setError(null);
+    try {
+      await api(path, init);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const th: React.CSSProperties = {
+    textAlign: "left", padding: "10px 12px", fontSize: 11, letterSpacing: ".1em",
+    color: GOLD, borderBottom: BORDER, whiteSpace: "nowrap", background: PANEL_SOLID,
+  };
+  const td: React.CSSProperties = { padding: "9px 12px", color: PARCH };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, height: "100%", minHeight: 0 }}>
+      <h2 className="cinzel" style={{ margin: 0, fontSize: 20, color: "#e2c682" }}>
+        Résumés
+        {rows && <span style={{ fontSize: 13, color: "#9c8a5e", marginLeft: 10, letterSpacing: 0 }}>{rows.length} variants</span>}
+      </h2>
+
+      <form onSubmit={upload} style={{ background: PANEL, border: BORDER, borderRadius: 3, padding: "16px 18px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", flex: "none" }}>
+        <input
+          placeholder="Label — e.g. Software Engineer"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          required
+          style={{ ...inputStyle, width: 260 }}
+        />
+        <input
+          key={fileKey}
+          type="file"
+          accept="application/pdf,.pdf"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          style={{ ...inputStyle, width: 280, padding: "7px 11px" }}
+        />
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: PARCH, cursor: "pointer" }}>
+          <input type="checkbox" checked={makeDefault} onChange={(e) => setMakeDefault(e.target.checked)} />
+          make default
+        </label>
+        <button type="submit" disabled={busy} className="cinzel" style={{ ...btnStyle, opacity: busy ? 0.6 : 1 }}>
+          {busy ? "UPLOADING…" : "+ UPLOAD PDF"}
+        </button>
+      </form>
+
+      {error && <div style={{ color: "#e08060", flex: "none" }}>{error}</div>}
+      {rows === null && !error && <div style={{ color: "#9c8a5e", fontStyle: "italic" }}>Consulting the archive…</div>}
+
+      {rows && (
+        <div style={{ overflow: "auto", background: PANEL, border: BORDER, borderRadius: 3, flex: 1, minHeight: 0 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
+            <thead>
+              <tr>
+                <th style={th}>label</th>
+                <th style={th}>file</th>
+                <th style={th}>size</th>
+                <th style={th}>default</th>
+                <th style={{ ...th, width: 1 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} style={{ borderBottom: "1px solid rgba(74,58,24,.4)" }}>
+                  <td style={td}>{r.label}</td>
+                  <td style={td}>
+                    {r.bytes ? (
+                      <a href={`/api/resume/${r.id}`} target="_blank" rel="noreferrer">{r.file_name ?? "resume.pdf"}</a>
+                    ) : (
+                      <span title="Legacy static path — file may not exist under public/">
+                        <a href={r.file_path} target="_blank" rel="noreferrer">{r.file_path}</a>{" "}
+                        <span style={{ color: "#9c8a5e", fontStyle: "italic" }}>(static path)</span>
+                      </span>
+                    )}
+                  </td>
+                  <td style={td}>{r.bytes ? `${Math.round(r.bytes / 1024)} KB` : <span style={{ opacity: 0.4 }}>—</span>}</td>
+                  <td style={td}>
+                    {r.is_default ? (
+                      <span className="cinzel" style={{ fontSize: 11, letterSpacing: ".1em", color: GOLD }}>◆ DEFAULT</span>
+                    ) : (
+                      <button onClick={() => act(`/api/admin/resume/${r.id}`, { method: "PUT" })} className="cinzel" style={{ ...btnStyle, padding: "5px 10px", fontSize: 10.5 }}>
+                        MAKE DEFAULT
+                      </button>
+                    )}
+                  </td>
+                  <td style={{ padding: "6px 12px", whiteSpace: "nowrap", textAlign: "right" }}>
+                    <button
+                      onClick={() => window.confirm(`Delete “${r.label}”? Visitors will no longer see it.`) && act(`/api/admin/resume/${r.id}`, { method: "DELETE" })}
+                      className="cinzel"
+                      style={{ ...btnStyle, padding: "5px 10px", fontSize: 10.5, background: "#3d1410", borderColor: "#8c4134", color: "#e0a898" }}
+                    >
+                      DELETE
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ padding: 16, color: "#9c8a5e", fontStyle: "italic" }}>No résumés yet — upload one above.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── shell ────────────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -480,6 +646,7 @@ export default function AdminPage() {
   const groups = useMemo(() => {
     const g: Record<string, string[]> = {};
     for (const [key, def] of Object.entries(ENTITIES)) (g[def.group] ??= []).push(key);
+    (g.Career ??= []).push("__resumes"); // custom blob panel, not a generic entity
     return g;
   }, []);
 
@@ -546,14 +713,14 @@ export default function AdminPage() {
                     cursor: "pointer",
                   }}
                 >
-                  {ENTITIES[k].label}
+                  {k === "__resumes" ? "Résumés (PDF)" : ENTITIES[k].label}
                 </button>
               ))}
             </div>
           ))}
         </nav>
         <main style={{ flex: 1, minWidth: 0, minHeight: 0, padding: "20px 24px", display: "flex", flexDirection: "column" }}>
-          <EntityPanel key={entity} name={entity} />
+          {entity === "__resumes" ? <ResumePanel /> : <EntityPanel key={entity} name={entity} />}
         </main>
       </div>
     </div>

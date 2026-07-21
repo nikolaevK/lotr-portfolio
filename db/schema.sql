@@ -133,7 +133,13 @@ CREATE TABLE IF NOT EXISTS project_skills (
 CREATE TABLE IF NOT EXISTS resume_variants (
   id            INTEGER PRIMARY KEY,
   label         TEXT NOT NULL UNIQUE,         -- 'Software Engineer', 'Business & Data Analyst'
-  file_path     TEXT NOT NULL,                -- '/resume/Konstantin_Nikolaev_Software_Engineer.pdf'
+  file_path     TEXT NOT NULL DEFAULT '',     -- legacy static path; '' when the PDF lives in `data`
+  file_name     TEXT,                         -- download filename for blob-backed rows
+  data          BLOB,                         -- the PDF itself (served by /api/resume/[id]);
+                                              -- NEVER select this column in list queries
+  uploaded_at   TEXT,                         -- set on upload; cache-busts /api/resume URLs
+                                              -- (rowids get reused after DELETE, so the id alone
+                                              -- is not a safe CDN cache key)
   is_default    INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0,1)),
   sort_order    INTEGER NOT NULL DEFAULT 0
 );
@@ -295,6 +301,16 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   success       INTEGER NOT NULL DEFAULT 0 CHECK (success IN (0,1))
 );
 
+-- Ravens from the contact scroll (written by public /api/contact, read in /admin)
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id            INTEGER PRIMARY KEY,
+  from_name     TEXT NOT NULL,
+  from_email    TEXT NOT NULL,
+  message       TEXT NOT NULL,
+  ip            TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ────────────────────────────── INDEXES ─────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_profile_links_profile   ON profile_links(profile_id);
@@ -313,6 +329,7 @@ CREATE INDEX IF NOT EXISTS idx_voice_lines_region      ON voice_lines(region_id)
 CREATE INDEX IF NOT EXISTS idx_characters_region       ON characters(region_id);
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_user     ON admin_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_login_attempts_key      ON login_attempts(key, attempted_at);
+CREATE INDEX IF NOT EXISTS idx_contact_messages_ip     ON contact_messages(ip, created_at);
 
 -- ────────────────────────────── VIEWS ───────────────────────────────────────
 

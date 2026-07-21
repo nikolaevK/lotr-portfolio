@@ -34,7 +34,7 @@ export interface FieldDef {
 export interface EntityDef {
   table: string;
   label: string;
-  group: "Career" | "Game" | "World";
+  group: "Career" | "Game" | "World" | "Inbox";
   /** primary key column (INTEGER rowid alias unless noted) */
   pk: string;
   /** pk supplied by the user instead of auto-assigned (settings-style tables) */
@@ -190,16 +190,9 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "sort_order", type: "number" },
     ],
   },
-  resume_variants: {
-    table: "resume_variants", label: "Résumé variants", group: "Career", pk: "id", orderBy: "sort_order",
-    listCols: ["id", "label", "file_path", "is_default"],
-    fields: [
-      { name: "label", type: "text", required: true },
-      { name: "file_path", type: "text", required: true, hint: "/assets/resume.pdf" },
-      { name: "is_default", type: "bool" },
-      { name: "sort_order", type: "number" },
-    ],
-  },
+  // resume_variants is deliberately NOT here: its rows carry the PDF blob, so
+  // the generic SELECT * CRUD must never touch it — see the Résumés panel and
+  // /api/admin/resume instead.
   regions: {
     table: "regions", label: "Regions", group: "Game", pk: "id", orderBy: "sort_order",
     listCols: ["id", "slug", "place", "glyph"],
@@ -322,5 +315,16 @@ export const ENTITIES: Record<string, EntityDef> = {
     table: "game_settings", label: "Game settings", group: "World", pk: "key", manualPk: true, orderBy: "key",
     listCols: ["key", "value"],
     fields: [{ name: "value", type: "text", required: true }],
+  },
+  contact_messages: {
+    // visitor-submitted via public /api/contact; listed newest first (ip and
+    // created_at come along via SELECT * — deliberately not editable fields)
+    table: "contact_messages", label: "Ravens received", group: "Inbox", pk: "id", orderBy: "id DESC",
+    listCols: ["id", "created_at", "from_name", "from_email", "message", "ip"],
+    fields: [
+      { name: "from_name", type: "text", required: true },
+      { name: "from_email", type: "text", required: true },
+      { name: "message", type: "textarea", required: true },
+    ],
   },
 };

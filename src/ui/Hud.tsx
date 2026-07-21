@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useContent, xpEarned, xpMax } from "@/state/content";
 import { useGame } from "@/state/store";
@@ -14,6 +14,20 @@ const btnStyle: React.CSSProperties = {
   padding: "9px 14px",
   cursor: "pointer",
   borderRadius: 2,
+};
+
+// phone buttons: one fixed height, no wrapping — uniform row whatever the label
+const compactBtn: React.CSSProperties = {
+  ...btnStyle,
+  height: 44,
+  padding: "0 12px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+  whiteSpace: "nowrap",
+  fontSize: 11,
+  letterSpacing: ".08em",
 };
 
 function CursorButton({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
@@ -57,6 +71,28 @@ export function Hud() {
     })),
   );
   const [isTouch] = useState(() => typeof window !== "undefined" && matchMedia("(pointer: coarse)").matches);
+  // phones get a folded HUD: progress and secondary buttons behind toggles
+  // (tracks rotation, so a listener rather than init-once like isTouch)
+  const [compact, setCompact] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => {
+    const mq = matchMedia("(max-width: 760px)");
+    const upd = () => setCompact(mq.matches);
+    upd();
+    mq.addEventListener("change", upd);
+    return () => mq.removeEventListener("change", upd);
+  }, []);
+  // the keyboard hint bar makes no sense on touch/phones — teach the map
+  // gestures once, as a toast, the first time the map view opens
+  useEffect(() => {
+    // touch devices only — a narrow desktop window can't pinch or tap
+    if (!s.overview || !isTouch) return;
+    const key = "there-and-back-again-map-hint";
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    useGame.getState().toast("THE MAP", "Drag to roam · pinch to zoom · tap a place for its tale");
+  }, [s.overview, isTouch]);
   const c = useContent(
     useShallow((ct) => ({ regions: ct.regions, titles: ct.titles, lostPages: ct.lostPages, beacons: ct.beacons, xp: ct.xp })),
   );
@@ -77,20 +113,37 @@ export function Hud() {
           top: 0,
           left: 0,
           right: 0,
-          padding: "16px 20px",
+          // notch/home-bar clearance on viewport-fit=cover phones
+          padding:
+            "calc(16px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) 16px calc(20px + env(safe-area-inset-left))",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-start",
           pointerEvents: "none",
-          zIndex: 20,
+          // above TouchControls (25): the open ⋯ menu must win taps over FIRE/SOAR
+          zIndex: 26,
           animation: "fadeIn .8s",
         }}
       >
-        <div style={{ pointerEvents: "auto", display: "flex", flexDirection: "column", gap: 8, maxWidth: "48vw" }}>
-          <button onClick={s.toggleQuest} className="cinzel hud-btn" style={{ ...btnStyle, display: "flex", alignItems: "center", gap: 10, fontSize: 14, letterSpacing: ".1em", padding: "10px 16px" }}>
-            <span style={{ display: "inline-block", width: 10, height: 10, background: "#c9963c", transform: "rotate(45deg)" }} />
-            QUEST LOG · {count} / {c.regions.length}
-          </button>
+        <div style={{ pointerEvents: "auto", display: "flex", flexDirection: "column", gap: 8, maxWidth: compact ? "60vw" : "48vw" }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={s.toggleQuest}
+              title="Quest log"
+              className="cinzel hud-btn"
+              style={compact ? compactBtn : { ...btnStyle, display: "flex", alignItems: "center", gap: 10, fontSize: 14, letterSpacing: ".1em", padding: "10px 16px" }}
+            >
+              <span style={{ display: "inline-block", width: 10, height: 10, background: "#c9963c", transform: "rotate(45deg)", flex: "none" }} />
+              {compact ? `${count}/${c.regions.length}` : `QUEST LOG · ${count} / ${c.regions.length}`}
+            </button>
+            {compact && (
+              <button onClick={() => setStatsOpen(!statsOpen)} className="cinzel hud-btn" style={{ ...compactBtn, width: 44, padding: 0 }} title="Progress">
+                {statsOpen ? "▲" : "▼"}
+              </button>
+            )}
+          </div>
+          {(!compact || statsOpen) && (
+            <>
           {c.titles.length > 0 && (
             <div style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "5px 12px", fontSize: 14, fontStyle: "italic", color: "#b8a678", borderRadius: 2 }}>
               {c.titles[Math.min(count, c.titles.length - 1)]}
@@ -120,10 +173,39 @@ export function Hud() {
               BEACONS {beaconsN}/{c.beacons.length}
             </div>
           </div>
+            </>
+          )}
         </div>
 
-        <div style={{ pointerEvents: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <div style={{ display: "flex", gap: 4, background: "rgba(24,16,7,.88)", border: "1px solid #7a5f2a", padding: 6, borderRadius: 2 }}>
+        <div style={{ pointerEvents: "auto", position: "relative", display: "flex", gap: 8, alignItems: "center", flexWrap: compact ? "nowrap" : "wrap", justifyContent: "flex-end" }}>
+          {compact && (
+            <>
+              <button onClick={s.toggleOverview} className="cinzel hud-btn" style={compactBtn} title="The high aerial view">
+                {s.overview ? "RIDE" : "MAP"}
+              </button>
+              <button
+                onClick={() => s.setContact(true)}
+                className="cinzel hud-btn"
+                style={{ ...compactBtn, background: "#3d2b10", border: "1px solid #c9963c", color: "#ecd9a0" }}
+              >
+                RAVEN
+              </button>
+              <button onClick={() => setMoreOpen(!moreOpen)} className="cinzel hud-btn" style={{ ...compactBtn, width: 44, padding: 0, fontSize: 15 }} title="More">
+                {moreOpen ? "✕" : "⋯"}
+              </button>
+            </>
+          )}
+          {(!compact || moreOpen) && (
+            // phones: a menu anchored under the row, never fighting it for width;
+            // desktop: display:contents keeps children in the original flex row
+            <div
+              style={
+                compact
+                  ? { position: "absolute", top: "calc(100% + 8px)", right: 0, width: 210, display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch", maxHeight: "calc(100vh - 160px)", overflowY: "auto" }
+                  : { display: "contents" }
+              }
+            >
+          <div style={{ display: "flex", gap: 4, background: "rgba(24,16,7,.88)", border: "1px solid #7a5f2a", padding: 6, borderRadius: 2, justifyContent: "center" }}>
             <CursorButton id="staff" title="Gandalf's staff">
               <svg width="22" height="22" viewBox="0 0 32 32">
                 <line x1="9" y1="29" x2="22" y2="7" stroke="#8a6f38" strokeWidth="3" strokeLinecap="round" />
@@ -158,33 +240,39 @@ export function Hud() {
               </svg>
             </CursorButton>
           </div>
-          <button onClick={s.toggleTone} className="cinzel hud-btn" style={btnStyle}>
+          <button onClick={s.toggleTone} className="cinzel hud-btn" style={compact ? compactBtn : btnStyle}>
             {s.tone === "common" ? "COMMON TONGUE" : "ELVISH MODE"}
           </button>
           <button
             onClick={() => s.setMount(s.mount === "dragon" ? "eagle" : "dragon")}
             className="cinzel hud-btn"
-            style={btnStyle}
+            style={compact ? compactBtn : btnStyle}
             title="Change your steed"
           >
             STEED: {s.mount === "dragon" ? "DRAGON" : "EAGLE"}
           </button>
-          <button onClick={s.toggleOverview} className="cinzel hud-btn" style={btnStyle} title="The high aerial view (M)">
-            {s.overview ? "RIDE ON" : "MAP VIEW"}
-          </button>
-          <button onClick={s.toggleQuality} className="cinzel hud-btn" style={btnStyle} title="Render quality">
+          {!compact && (
+            <button onClick={s.toggleOverview} className="cinzel hud-btn" style={btnStyle} title="The high aerial view (M)">
+              {s.overview ? "RIDE ON" : "MAP VIEW"}
+            </button>
+          )}
+          <button onClick={s.toggleQuality} className="cinzel hud-btn" style={compact ? compactBtn : btnStyle} title="Render quality">
             DETAIL: {s.quality === "high" ? "HIGH" : "LOW"}
           </button>
-          <button onClick={s.toggleMute} className="cinzel hud-btn" style={btnStyle}>
+          <button onClick={s.toggleMute} className="cinzel hud-btn" style={compact ? compactBtn : btnStyle}>
             {s.muted ? "SOUND: OFF" : "SOUND: ON"}
           </button>
-          <button
-            onClick={() => s.setContact(true)}
-            className="cinzel hud-btn"
-            style={{ ...btnStyle, background: "#3d2b10", border: "1px solid #c9963c", color: "#ecd9a0", letterSpacing: ".08em", padding: "9px 16px" }}
-          >
-            SEND A RAVEN
-          </button>
+          {!compact && (
+            <button
+              onClick={() => s.setContact(true)}
+              className="cinzel hud-btn"
+              style={{ ...btnStyle, background: "#3d2b10", border: "1px solid #c9963c", color: "#ecd9a0", letterSpacing: ".08em", padding: "9px 16px" }}
+            >
+              SEND A RAVEN
+            </button>
+          )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -192,7 +280,7 @@ export function Hud() {
       <div
         style={{
           position: "absolute",
-          top: 78,
+          top: "calc(78px + env(safe-area-inset-top))",
           left: "50%",
           transform: "translateX(-50%)",
           fontStyle: "italic",
@@ -207,6 +295,9 @@ export function Hud() {
           pointerEvents: "none",
           zIndex: 20,
           whiteSpace: "nowrap",
+          maxWidth: "88vw",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
       >
         {s.caption}
@@ -240,8 +331,8 @@ export function Hud() {
         </div>
       )}
 
-      {/* controls hint */}
-      {!isTouch && (
+      {/* controls hint — keyboard-only, and phones get the gesture toast instead */}
+      {!isTouch && !compact && (
         <div
           style={{
             position: "absolute",

@@ -177,6 +177,28 @@ button {
   }
 }
 
+@media (pointer: coarse) {
+  /* comfortable thumb targets (44px guideline) */
+  .hud-btn {
+    min-height: 44px;
+  }
+}
+
+/* narrow scrolls: the panel is ~94vw, so ornaments that overhang its edges
+   would fall off-screen — hide the roller knobs, pull the seal inside */
+@media (max-width: 760px) {
+  .scroll-knob {
+    display: none;
+  }
+  .scroll-seal {
+    top: -20px !important;
+    right: 2px !important;
+  }
+  .scroll-sheet {
+    padding: 26px 20px 22px !important;
+  }
+}
+
 /* the character niche folds away on narrow scrolls */
 @media (max-width: 700px) {
   .scroll-char-rail {

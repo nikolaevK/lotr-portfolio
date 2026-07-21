@@ -53,6 +53,8 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: "#0e0a06",
+  // draw under the notch; UI pads itself with env(safe-area-inset-*)
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

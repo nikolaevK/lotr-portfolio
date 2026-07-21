@@ -13,12 +13,15 @@ export function MapTooltip() {
   const place = (el: HTMLDivElement) => {
     const pad = 18;
     const w = el.offsetWidth || 260;
+    const h = el.offsetHeight || 90;
     const x = Math.min(last.current.x + pad, window.innerWidth - w - 12);
-    const y = Math.max(last.current.y - 14, 12);
+    // clamp both ends — bottom-edge taps must not push the tooltip off-screen
+    const y = Math.min(Math.max(last.current.y - 14, 12), window.innerHeight - h - 12);
     el.style.transform = `translate(${x}px, ${y}px)`;
   };
 
-  // track the cursor only while in map view
+  // track the cursor only while in map view; pointerdown too — a touch tap
+  // (which reveals the tooltip on mobile) may never fire a pointermove
   useEffect(() => {
     if (!overview) return;
     const onMove = (e: PointerEvent) => {
@@ -27,7 +30,11 @@ export function MapTooltip() {
       if (ref.current) place(ref.current);
     };
     window.addEventListener("pointermove", onMove);
-    return () => window.removeEventListener("pointermove", onMove);
+    window.addEventListener("pointerdown", onMove);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerdown", onMove);
+    };
   }, [overview]);
 
   // the div mounts after the pointermove that triggered the hover — seed its

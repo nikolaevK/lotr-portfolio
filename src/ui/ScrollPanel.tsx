@@ -76,7 +76,7 @@ function Bullets({ items, fold = 4 }: { items: string[]; fold?: number }) {
             color: ACCENT,
             fontSize: 11,
             letterSpacing: ".14em",
-            padding: "2px 0",
+            padding: "8px 0",
             cursor: "pointer",
           }}
         >
@@ -348,7 +348,7 @@ export function ScrollPanel() {
     "repeating-linear-gradient(90deg, rgba(30,16,4,.22) 0 2px, transparent 2px 9px, rgba(60,35,12,.16) 9px 12px, transparent 12px 21px), linear-gradient(#9a6b33 0%, #5c3a18 38%, #331d0a 58%, #6b4520 100%)";
 
   const knob = (side: "left" | "right") => (
-    <div style={{ position: "absolute", [side]: -36, top: 2, width: 26, height: 26 }}>
+    <div className="scroll-knob" style={{ position: "absolute", [side]: -36, top: 2, width: 26, height: 26 }}>
       <div
         style={{
           position: "absolute",
@@ -440,7 +440,7 @@ export function ScrollPanel() {
                   pointerEvents: "none",
                 }}
               />
-              <div style={{ position: "relative", maxHeight: "calc(76vh - 58px)", overflowY: "auto", padding: "32px 46px 28px" }}>
+              <div className="scroll-sheet" style={{ position: "relative", maxHeight: "calc(76vh - 58px)", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "32px 46px 28px" }}>
                 <ScrollBody key={region.id} region={region} isNew={isNew} />
               </div>
             </div>
@@ -450,7 +450,7 @@ export function ScrollPanel() {
         <button
           onClick={closePanel}
           title="Seal the scroll"
-          className="cinzel seal-btn"
+          className="cinzel seal-btn scroll-seal"
           style={{
             position: "absolute",
             top: -18,

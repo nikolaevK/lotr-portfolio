@@ -39,10 +39,12 @@ if (Number(populated.rows[0].n) > 0 && !process.argv.includes("--force")) {
 const stmts = [];
 const run = (sql, args = []) => stmts.push({ sql, args });
 
-// wipe content tables (cascades cover children); auth tables untouched
+// wipe content tables (cascades cover children); auth tables untouched.
+// resume_variants is also deliberately absent: rows carry admin-uploaded PDF
+// blobs (irrecoverable binary) — manage them from /admin, not the seed.
 for (const t of [
   "characters", "voice_lines", "regions", "titles", "lost_pages", "beacons",
-  "cursors", "xp_rules", "game_settings", "resume_variants",
+  "cursors", "xp_rules", "game_settings",
   "experiences", "educations", "projects", "skill_categories", "profiles",
 ]) run(`DELETE FROM ${t}`);
 
@@ -256,15 +258,7 @@ PROJECTS.forEach((p, i) => {
   );
 });
 
-// ── résumé variants ──────────────────────────────────────────────────────────
-[
-  ["Software Engineer", "/assets/resume.pdf", 1],
-  ["Business & Data Analyst", "/assets/resume/Konstantin_Nikolaev_Business_Data_Analyst.pdf", 0],
-  ["Electrical Apprentice", "/assets/resume/Konstantin_Nikolaev_Electrical_Apprentice.pdf", 0],
-  ["General Construction", "/assets/resume/Konstantin_Nikolaev_General_Construction.pdf", 0],
-].forEach(([label, path, dflt], i) =>
-  run(`INSERT INTO resume_variants (label, file_path, is_default, sort_order) VALUES (?,?,?,?)`, [label, path, dflt, i]),
-);
+// (résumé variants are not seeded — upload PDFs from /admin → Résumés)
 
 // ── regions + tones + deeds + artifacts + links ──────────────────────────────
 const REGIONS = [

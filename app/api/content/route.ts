@@ -39,7 +39,9 @@ async function buildContent() {
       "SELECT * FROM xp_rules",
       "SELECT * FROM profiles LIMIT 1",
       "SELECT * FROM profile_links ORDER BY sort_order",
-      "SELECT * FROM resume_variants ORDER BY sort_order",
+      // no `data` — the blob would bloat the whole content payload; `ver` busts
+      // CDN caches when a reused SQLite rowid gets a different PDF
+      "SELECT id, label, file_path, is_default, (data IS NOT NULL) AS has_blob, COALESCE(strftime('%s', uploaded_at), 0) AS ver FROM resume_variants ORDER BY sort_order",
     ],
     "read",
   );
@@ -182,7 +184,7 @@ async function buildContent() {
       : null,
     resumeVariants: resumeVariants.rows.map((v) => ({
       label: String(v.label),
-      path: String(v.file_path),
+      path: Number(v.has_blob) ? `/api/resume/${Number(v.id)}?v=${Number(v.ver)}` : String(v.file_path),
       isDefault: Number(v.is_default) === 1,
     })),
   };
@@ -190,7 +192,10 @@ async function buildContent() {
   return body;
 }
 
-const getContent = unstable_cache(buildContent, ["content-payload"], { tags: ["content"] });
+// revalidate here (the data cache) is the real staleness bound for writes that
+// bypass the admin routes (seed script, Turso console); without it the entry
+// lives forever and the route-level ISR just re-reads it
+const getContent = unstable_cache(buildContent, ["content-payload"], { tags: ["content"], revalidate: 300 });
 
 export async function GET() {
   return NextResponse.json(await getContent());

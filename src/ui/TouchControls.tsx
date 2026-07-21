@@ -86,8 +86,8 @@ export function TouchControls() {
         onPointerCancel={release}
         style={{
           position: "absolute",
-          left: 22,
-          bottom: 26,
+          left: "calc(22px + env(safe-area-inset-left))",
+          bottom: "calc(26px + env(safe-area-inset-bottom))",
           width: R * 2,
           height: R * 2,
           borderRadius: "50%",
@@ -114,7 +114,7 @@ export function TouchControls() {
         />
       </div>
       {/* buttons — right */}
-      <div style={{ position: "absolute", right: 22, bottom: 30, display: "flex", gap: 14, zIndex: 25, pointerEvents: "auto" }}>
+      <div style={{ position: "absolute", right: "calc(22px + env(safe-area-inset-right))", bottom: "calc(30px + env(safe-area-inset-bottom))", display: "flex", gap: 14, zIndex: 25, pointerEvents: "auto" }}>
         <button
           {...holdBtn("boost")}
           className="cinzel"

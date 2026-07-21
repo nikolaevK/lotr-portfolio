@@ -49,7 +49,9 @@ export function Experience() {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.08;
       }}
-      style={{ position: "absolute", inset: 0 }}
+      // touchAction none: iOS ignores user-scalable=no, so without this a
+      // two-finger map pinch starts native page zoom and cancels our pointers
+      style={{ position: "absolute", inset: 0, touchAction: "none" }}
     >
       <Suspense fallback={null}>
         <SkyDome />
