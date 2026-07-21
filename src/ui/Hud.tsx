@@ -72,12 +72,14 @@ export function Hud() {
   );
   const [isTouch] = useState(() => typeof window !== "undefined" && matchMedia("(pointer: coarse)").matches);
   // phones get a folded HUD: progress and secondary buttons behind toggles
-  // (tracks rotation, so a listener rather than init-once like isTouch)
+  // (tracks rotation, so a listener rather than init-once like isTouch).
+  // Second query: landscape phones are ~850px WIDE but ~390px tall — width
+  // alone would hand them the desktop layout with no vertical room for it.
   const [compact, setCompact] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
-    const mq = matchMedia("(max-width: 760px)");
+    const mq = matchMedia("(max-width: 760px), (pointer: coarse) and (max-height: 520px)");
     const upd = () => setCompact(mq.matches);
     upd();
     mq.addEventListener("change", upd);
