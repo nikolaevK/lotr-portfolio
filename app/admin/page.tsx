@@ -20,7 +20,7 @@ const BORDER = "1px solid #4a3a18";
 
 const inputStyle: React.CSSProperties = {
   fontFamily: "inherit",
-  fontSize: 15,
+  fontSize: 16, // ≥16px: iOS Safari auto-zooms the page on focus below that
   padding: "9px 11px",
   background: "rgba(255,252,240,.07)",
   border: "1px solid #6b5327",
@@ -39,6 +39,19 @@ const btnStyle: React.CSSProperties = {
   cursor: "pointer",
   borderRadius: 2,
 };
+
+/** Phone-sized viewport (tracks rotation) — the sidebar becomes a select bar. */
+function useCompact() {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const mq = matchMedia("(max-width: 820px)");
+    const upd = () => setCompact(mq.matches);
+    upd();
+    mq.addEventListener("change", upd);
+    return () => mq.removeEventListener("change", upd);
+  }, []);
+  return compact;
+}
 
 async function api(path: string, init?: RequestInit) {
   const res = await fetch(path, {
@@ -99,8 +112,8 @@ function AuthGate({ needsSetup, onDone }: { needsSetup: boolean; onDone: (email:
   };
 
   return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, overflowY: "auto" }}>
-      <form onSubmit={submit} style={{ width: 400, maxWidth: "94vw", background: PANEL, border: "2px solid #6b5327", borderRadius: 3, padding: "34px 36px", display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ height: "100dvh", display: "flex", padding: 20, overflowY: "auto" }}>
+      <form onSubmit={submit} style={{ width: 400, maxWidth: "94vw", margin: "auto", background: PANEL, border: "2px solid #6b5327", borderRadius: 3, padding: "34px 36px", display: "flex", flexDirection: "column", gap: 14 }}>
         <div className="cinzel" style={{ fontSize: 12, letterSpacing: ".22em", color: GOLD }}>THE STEWARD&apos;S DESK</div>
         <h1 className="cinzel" style={{ fontSize: 24, margin: 0, color: "#e2c682" }}>
           {needsSetup ? "Claim the Keys" : "Speak, Friend, and Enter"}
@@ -303,6 +316,7 @@ function RecordForm({
 
 function EntityPanel({ name }: { name: string }) {
   const def = ENTITIES[name];
+  const compact = useCompact();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [refData, setRefData] = useState<RefData>({});
   const [error, setError] = useState<string | null>(null);
@@ -406,7 +420,7 @@ function EntityPanel({ name }: { name: string }) {
               placeholder="Filter…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              style={{ ...inputStyle, width: 180, padding: "7px 10px", fontSize: 14 }}
+              style={{ ...inputStyle, width: compact ? 130 : 180, padding: "7px 10px", fontSize: 16 }}
             />
           )}
           <button onClick={() => setEditing("new")} className="cinzel" style={btnStyle}>+ NEW</button>
@@ -445,10 +459,10 @@ function EntityPanel({ name }: { name: string }) {
                     );
                   })}
                   <td style={{ padding: "6px 12px", whiteSpace: "nowrap", textAlign: "right" }}>
-                    <button onClick={() => setEditing(row)} className="cinzel" style={{ ...btnStyle, padding: "5px 10px", fontSize: 10.5, marginRight: 6 }}>
+                    <button onClick={() => setEditing(row)} className="cinzel" style={{ ...btnStyle, padding: compact ? "10px 14px" : "5px 10px", fontSize: compact ? 11.5 : 10.5, marginRight: 6 }}>
                       EDIT
                     </button>
-                    <button onClick={() => remove(row)} className="cinzel" style={{ ...btnStyle, padding: "5px 10px", fontSize: 10.5, background: "#3d1410", borderColor: "#8c4134", color: "#e0a898" }}>
+                    <button onClick={() => remove(row)} className="cinzel" style={{ ...btnStyle, padding: compact ? "10px 14px" : "5px 10px", fontSize: compact ? 11.5 : 10.5, background: "#3d1410", borderColor: "#8c4134", color: "#e0a898" }}>
                       DELETE
                     </button>
                   </td>
@@ -481,6 +495,7 @@ interface ResumeRow {
 }
 
 function ResumePanel() {
+  const compact = useCompact();
   const [rows, setRows] = useState<ResumeRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -554,14 +569,14 @@ function ResumePanel() {
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           required
-          style={{ ...inputStyle, width: 260 }}
+          style={{ ...inputStyle, width: compact ? "100%" : 260 }}
         />
         <input
           key={fileKey}
           type="file"
           accept="application/pdf,.pdf"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          style={{ ...inputStyle, width: 280, padding: "7px 11px" }}
+          style={{ ...inputStyle, width: compact ? "100%" : 280, padding: "7px 11px" }}
         />
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: PARCH, cursor: "pointer" }}>
           <input type="checkbox" checked={makeDefault} onChange={(e) => setMakeDefault(e.target.checked)} />
@@ -606,7 +621,7 @@ function ResumePanel() {
                     {r.is_default ? (
                       <span className="cinzel" style={{ fontSize: 11, letterSpacing: ".1em", color: GOLD }}>◆ DEFAULT</span>
                     ) : (
-                      <button onClick={() => act(`/api/admin/resume/${r.id}`, { method: "PUT" })} className="cinzel" style={{ ...btnStyle, padding: "5px 10px", fontSize: 10.5 }}>
+                      <button onClick={() => act(`/api/admin/resume/${r.id}`, { method: "PUT" })} className="cinzel" style={{ ...btnStyle, padding: compact ? "10px 14px" : "5px 10px", fontSize: compact ? 11.5 : 10.5 }}>
                         MAKE DEFAULT
                       </button>
                     )}
@@ -615,7 +630,7 @@ function ResumePanel() {
                     <button
                       onClick={() => window.confirm(`Delete “${r.label}”? Visitors will no longer see it.`) && act(`/api/admin/resume/${r.id}`, { method: "DELETE" })}
                       className="cinzel"
-                      style={{ ...btnStyle, padding: "5px 10px", fontSize: 10.5, background: "#3d1410", borderColor: "#8c4134", color: "#e0a898" }}
+                      style={{ ...btnStyle, padding: compact ? "10px 14px" : "5px 10px", fontSize: compact ? 11.5 : 10.5, background: "#3d1410", borderColor: "#8c4134", color: "#e0a898" }}
                     >
                       DELETE
                     </button>
@@ -642,6 +657,7 @@ export default function AdminPage() {
     checked: false, authenticated: false, needsSetup: false, email: null,
   });
   const [entity, setEntity] = useState("regions");
+  const compact = useCompact();
 
   const groups = useMemo(() => {
     const g: Record<string, string[]> = {};
@@ -668,16 +684,17 @@ export default function AdminPage() {
   }
 
   return (
-    // the game's globals.css sets body overflow:hidden — the shell owns all scrolling
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <header style={{ flex: "none", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "14px 22px", borderBottom: "2px solid #4a3a18", background: PANEL }}>
+    // the game's globals.css sets body overflow:hidden — the shell owns all
+    // scrolling (dvh: 100vh hides the bottom strip under iOS Safari's toolbar)
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <header style={{ flex: "none", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: compact ? "10px 14px" : "14px 22px", borderBottom: "2px solid #4a3a18", background: PANEL }}>
         <div>
           <div className="cinzel" style={{ fontSize: 11, letterSpacing: ".22em", color: GOLD }}>THE STEWARD&apos;S DESK</div>
-          <div className="cinzel" style={{ fontSize: 18, color: "#e2c682" }}>There and Back Again — Archive</div>
+          {!compact && <div className="cinzel" style={{ fontSize: 18, color: "#e2c682" }}>There and Back Again — Archive</div>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <a href="/" className="cinzel" style={{ fontSize: 11.5, letterSpacing: ".1em" }}>← TO THE MAP</a>
-          <span style={{ fontSize: 13.5, fontStyle: "italic", color: "#9c8a5e" }}>{state.email}</span>
+          {!compact && <span style={{ fontSize: 13.5, fontStyle: "italic", color: "#9c8a5e" }}>{state.email}</span>}
           <button
             onClick={async () => {
               await api("/api/admin/auth", { method: "POST", body: JSON.stringify({ action: "logout" }) });
@@ -691,7 +708,30 @@ export default function AdminPage() {
         </div>
       </header>
 
+      {/* phones: the 230px sidebar would eat two-thirds of the screen — a
+          grouped native select does the same navigation in one thumb-height row */}
+      {compact && (
+        <div style={{ flex: "none", padding: "10px 14px", borderBottom: "2px solid #4a3a18", background: "rgba(20,13,6,.75)" }}>
+          <select
+            value={entity}
+            onChange={(e) => setEntity(e.target.value)}
+            style={{ ...inputStyle, appearance: "auto", background: PANEL_SOLID }}
+          >
+            {Object.entries(groups).map(([group, keys]) => (
+              <optgroup key={group} label={group}>
+                {keys.map((k) => (
+                  <option key={k} value={k}>
+                    {k === "__resumes" ? "Résumés (PDF)" : ENTITIES[k].label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div style={{ flex: 1, display: "flex", alignItems: "stretch", minHeight: 0 }}>
+        {!compact && (
         <nav style={{ width: 230, flex: "none", borderRight: "2px solid #4a3a18", padding: "16px 12px", overflowY: "auto", background: "rgba(20,13,6,.75)" }}>
           {Object.entries(groups).map(([group, keys]) => (
             <div key={group} style={{ marginBottom: 18 }}>
@@ -719,7 +759,8 @@ export default function AdminPage() {
             </div>
           ))}
         </nav>
-        <main style={{ flex: 1, minWidth: 0, minHeight: 0, padding: "20px 24px", display: "flex", flexDirection: "column" }}>
+        )}
+        <main style={{ flex: 1, minWidth: 0, minHeight: 0, padding: compact ? "14px 10px" : "20px 24px", display: "flex", flexDirection: "column" }}>
           {entity === "__resumes" ? <ResumePanel /> : <EntityPanel key={entity} name={entity} />}
         </main>
       </div>
