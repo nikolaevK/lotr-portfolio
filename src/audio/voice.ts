@@ -1,5 +1,7 @@
 "use client";
 
+import { audio } from "@/audio/engine";
+
 /**
  * Location-triggered voice lines / movie-moment clips.
  *
@@ -49,11 +51,13 @@ interface Hooks {
 }
 
 class VoicePlayer {
-  private els = new Map<string, HTMLAudioElement | "missing">();
+  // decoded WebAudio buffers — an <audio> element would be blocked by iOS
+  // autoplay policy when a zone (not a tap) triggers the line
+  private buffers = new Map<string, AudioBuffer | "missing">();
   private manifestLoaded = false;
   private lastPlayed = new Map<string, number>();
   private playingId: string | null = null;
-  private playingEl: HTMLAudioElement | null = null;
+  private stopFn: (() => void) | null = null;
   private hooks: Hooks = { isMuted: () => true, onCaption: () => {}, onDuck: () => {} };
 
   bind(hooks: Hooks) {
@@ -68,10 +72,10 @@ class VoicePlayer {
           if (!data?.files) return; // manifest unavailable — keep per-file detection
           const have = new Set(data.files);
           for (const line of VOICE_LINES) {
-            if (!have.has(line.file)) this.els.set(line.file, "missing");
+            if (!have.has(line.file)) this.buffers.set(line.file, "missing");
           }
           for (const ev of Object.values(EVENT_FILES)) {
-            if (!have.has(ev.file)) this.els.set(ev.file, "missing");
+            if (!have.has(ev.file)) this.buffers.set(ev.file, "missing");
           }
         })
         .catch(() => {});
@@ -89,51 +93,51 @@ class VoicePlayer {
     const now = performance.now() / 1000;
     const last = this.lastPlayed.get(id);
     if (last !== undefined && (once || now - last < cooldown)) return;
-
-    let el = this.els.get(file);
-    if (el === "missing") return;
-    if (!el) {
-      el = new Audio("/audio/" + file);
-      el.preload = "auto";
-      el.addEventListener("error", () => this.els.set(file, "missing"), { once: true });
-      this.els.set(file, el);
-    }
-    const audioEl = el;
-    audioEl.volume = 0.92;
-    try {
-      audioEl.currentTime = 0;
-    } catch {
-      /* not yet loaded — fine */
-    }
     this.playingId = id; // reserve immediately so triggers don't double-fire
+    void this.run(id, file, caption, now);
+  }
+
+  private async run(id: string, file: string, caption: string, now: number) {
     const finish = () => {
       if (this.playingId !== id) return;
       this.playingId = null;
-      this.playingEl = null;
+      this.stopFn = null;
       this.hooks.onCaption(null);
       this.hooks.onDuck(false);
     };
-    audioEl
-      .play()
-      .then(() => {
-        this.playingEl = audioEl;
-        this.lastPlayed.set(id, now);
-        this.hooks.onCaption(caption);
-        this.hooks.onDuck(true);
-        audioEl.onended = finish;
-        // hard stop safeguard for very long files
-        window.setTimeout(() => {
-          if (this.playingId === id && this.playingEl === audioEl) {
-            audioEl.pause();
-            finish();
-          }
-        }, 45000);
-      })
-      .catch(() => {
-        // 404 / unsupported / autoplay refusal — mark missing so we never retry
-        this.els.set(file, "missing");
-        finish();
-      });
+    const release = () => {
+      // never started — free the reservation without touching caption/duck
+      if (this.playingId === id) this.playingId = null;
+    };
+    try {
+      let buf = this.buffers.get(file);
+      if (buf === "missing") return release();
+      if (!buf) {
+        const res = await fetch("/audio/" + file);
+        if (!res.ok) throw new Error(String(res.status));
+        const decoded = await audio.decodeClip(await res.arrayBuffer());
+        if (!decoded) return release(); // audio unavailable, NOT a bad file — retry later
+        buf = decoded;
+        this.buffers.set(file, buf);
+      }
+      const stop = audio.playClip(buf, 0.92, finish);
+      if (!stop) return release();
+      this.stopFn = stop;
+      this.lastPlayed.set(id, now);
+      this.hooks.onCaption(caption);
+      this.hooks.onDuck(true);
+      // hard stop safeguard for very long files
+      window.setTimeout(() => {
+        if (this.playingId === id && this.stopFn === stop) {
+          stop();
+          finish();
+        }
+      }, 45000);
+    } catch {
+      // 404 / undecodable — genuinely bad file, never retry
+      this.buffers.set(file, "missing");
+      release();
+    }
   }
 
   playZone(line: VoiceLine) {
@@ -146,12 +150,9 @@ class VoicePlayer {
   }
 
   stop() {
-    if (this.playingEl) {
-      this.playingEl.pause();
-      this.playingEl.onended = null;
-    }
+    this.stopFn?.();
     this.playingId = null;
-    this.playingEl = null;
+    this.stopFn = null;
     this.hooks.onCaption(null);
     this.hooks.onDuck(false);
   }

@@ -262,6 +262,42 @@ class AudioEngine {
     this.sfx("rumble");
   }
 
+  /** Decode a fetched clip on the (gesture-unlocked) context. Null = no audio. */
+  async decodeClip(data: ArrayBuffer): Promise<AudioBuffer | null> {
+    this.ensure(this.muted);
+    if (!this.ctx) return null;
+    return this.ctx.decodeAudioData(data);
+  }
+
+  /**
+   * Play a decoded voice clip. WebAudio, not an <audio> element: HTMLMedia
+   * playback started outside a user gesture is blocked on iOS, while the
+   * context here was unlocked by the book-cover tap. Connects straight to the
+   * destination so duck() lowering the master bus doesn't duck the voice too.
+   * Returns a stop function, or null if audio is unavailable.
+   */
+  playClip(buffer: AudioBuffer, volume: number, onEnded: () => void): (() => void) | null {
+    const ctx = this.ctx;
+    if (!ctx) return null;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const g = ctx.createGain();
+    g.gain.value = volume;
+    src.connect(g);
+    g.connect(ctx.destination);
+    src.onended = onEnded;
+    src.start();
+    return () => {
+      src.onended = null;
+      try {
+        src.stop();
+      } catch {
+        /* already ended */
+      }
+    };
+  }
+
   sfx(kind: Sfx) {
     if (this.muted) return;
     this.ensure(false);
