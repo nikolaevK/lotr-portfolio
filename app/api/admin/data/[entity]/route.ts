@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { buildValues, dbc, entityOr404, guard } from "@/server/crud";
 
 export const runtime = "nodejs";
@@ -46,6 +47,7 @@ export async function POST(req: Request, ctx: Ctx) {
       sql: `INSERT INTO ${def.table} (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")}) RETURNING *`,
       args: vals,
     });
+    revalidateTag("content");
     return NextResponse.json({ row: res.rows[0] }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: dbError(e) }, { status: 400 });

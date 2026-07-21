@@ -3,6 +3,11 @@ const nextConfig = {
   reactStrictMode: true,
   images: { unoptimized: true },
   poweredByHeader: false,
+  // public/ is not in the deployed function's filesystem on Vercel, so the
+  // audio-manifest readdir needs the MP3s traced into its bundle.
+  outputFileTracingIncludes: {
+    "/api/audio-manifest/route": ["./public/audio/**"],
+  },
   async headers() {
     return [
       {

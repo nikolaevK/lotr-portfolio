@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import { db } from "@/server/db";
 
 export const runtime = "nodejs";
+// Statically cached (ISR): admin writes purge the "content" tag so edits show
+// up immediately; revalidate bounds staleness if a purge is ever missed.
+export const dynamic = "force-static";
+export const revalidate = 300;
 
 /**
  * The whole editable game payload in one request. Shapes mirror the static
  * fallbacks in src/data/content.ts so the store can swap either in.
  */
-export async function GET() {
+async function buildContent() {
   const [
     regions, tones, deeds, artifacts, links, characters,
     experiences, expHighlights, educations, eduDegrees, eduCourses,
@@ -182,7 +187,11 @@ export async function GET() {
     })),
   };
 
-  return NextResponse.json(body, {
-    headers: { "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300" },
-  });
+  return body;
+}
+
+const getContent = unstable_cache(buildContent, ["content-payload"], { tags: ["content"] });
+
+export async function GET() {
+  return NextResponse.json(await getContent());
 }

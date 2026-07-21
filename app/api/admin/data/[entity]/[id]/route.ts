@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { buildValues, dbc, entityOr404, guard } from "@/server/crud";
 
 export const runtime = "nodejs";
@@ -28,6 +29,7 @@ export async function PUT(req: Request, ctx: Ctx) {
       args: [...built.vals, id],
     });
     if (res.rows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    revalidateTag("content");
     return NextResponse.json({ row: res.rows[0] });
   } catch (e) {
     return NextResponse.json({ error: dbError(e) }, { status: 400 });
@@ -47,6 +49,7 @@ export async function DELETE(req: Request, ctx: Ctx) {
       args: [id],
     });
     if (res.rows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    revalidateTag("content");
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: dbError(e) }, { status: 400 });
