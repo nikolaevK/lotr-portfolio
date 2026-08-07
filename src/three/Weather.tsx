@@ -49,6 +49,14 @@ const PRESETS: Record<string, Preset> = {
 
 const SUN_DIR = new THREE.Vector3(-0.45, 0.5, -0.42).normalize();
 
+/**
+ * The hemisphere light was standing in for ambient light. Now that
+ * <SkyEnvironment> supplies real image-based lighting from the same sky
+ * colours, most of that job is done properly — the hemisphere is kept only as
+ * a cheap fill so ambient does not double up.
+ */
+const HEMI_WITH_IBL = 0.62;
+
 const clonePreset = (p: Preset): Preset => ({
   fog: p.fog.clone(),
   fogDensity: p.fogDensity,
@@ -185,6 +193,7 @@ export function Weather() {
     skyUniforms.uTop.value.copy(cur.skyTop);
     skyUniforms.uHorizon.value.copy(cur.skyHorizon);
     skyUniforms.uSunColor.value.copy(cur.sun);
+    skyUniforms.uGround.value.copy(cur.hemiGround);
     skyUniforms.uSunDir.value.copy(SUN_DIR);
     cloudState.tint.copy(cur.cloud);
     cloudState.opacity = cur.cloudO;
@@ -200,7 +209,7 @@ export function Weather() {
     if (hemi.current) {
       hemi.current.color.copy(cur.hemiSky);
       hemi.current.groundColor.copy(cur.hemiGround);
-      hemi.current.intensity = cur.hemiI;
+      hemi.current.intensity = cur.hemiI * HEMI_WITH_IBL;
     }
 
     // ── Mordor lightning ──
@@ -247,13 +256,17 @@ export function Weather() {
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
-        shadow-camera-left={-340}
-        shadow-camera-right={340}
-        shadow-camera-top={340}
-        shadow-camera-bottom={-340}
+        // tighter frustum than the visible world: landmarks are only rendered
+        // within 1500 units and the camera trails 30 behind, so spending the
+        // whole shadow map on ±190 buys ~1.8× the texel density
+        shadow-camera-left={-190}
+        shadow-camera-right={190}
+        shadow-camera-top={190}
+        shadow-camera-bottom={-190}
         shadow-camera-near={50}
-        shadow-camera-far={1800}
-        shadow-bias={-0.0004}
+        shadow-camera-far={1500}
+        shadow-bias={-0.00015}
+        shadow-normalBias={0.5}
       />
       {/* lightning bolt */}
       <primitive object={boltLine} />

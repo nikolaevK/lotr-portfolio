@@ -9,6 +9,7 @@ import { game } from "@/state/store";
 import { morph } from "@/three/Terrain";
 import { audio } from "@/audio/engine";
 import { createFlightState, stepFlight, DRAGON_TUNING } from "@/three/flight";
+import { heightToNormal, heightToRoughness } from "@/three/materials";
 
 // ── palette (from the 2D concept) ────────────────────────────────────────────
 const RED = new THREE.Color("#96201d");
@@ -29,14 +30,14 @@ const HEAD_POS: [number, number] = [5.38, 3.05];
 const ROOT_IDX = 11; // chest
 const RADII = [0.05, 0.1, 0.15, 0.22, 0.3, 0.38, 0.46, 0.56, 0.72, 0.88, 0.98, 1.02, 0.72, 0.55, 0.46, 0.42];
 const RINGS_PER_SEG = 4;
-const RADIAL = 20;
+const RADIAL = 26;
 const DRAGON_SCALE = 1.6;
 
 // bone index for a spine point index
 const boneOf = (j: number) => (j < ROOT_IDX ? ROOT_IDX - j : j === ROOT_IDX ? 0 : j);
 
-/** Dual-scale hide: big plates + fine scales; doubles as roughness variation. */
-function makeScaleBump() {
+/** Dual-scale hide: big plates + fine scales, as a height field. */
+function makeScaleHeight() {
   const S = 512;
   const cv = document.createElement("canvas");
   cv.width = cv.height = S;
@@ -81,9 +82,7 @@ function makeScaleBump() {
     }
   }
   ctx.globalAlpha = 1;
-  const tex = new THREE.CanvasTexture(cv);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  return tex;
+  return cv;
 }
 
 interface WingRig {
@@ -110,6 +109,7 @@ interface Rig {
   nostrilMat: THREE.MeshStandardMaterial;
   mouthGlowMat: THREE.MeshBasicMaterial;
   eyeMat: THREE.MeshStandardMaterial;
+  textures: THREE.Texture[];
 }
 
 const OUTLINE = 12; // membrane outline points; +12 mids +1 center = 25 verts
@@ -120,20 +120,37 @@ function buildDragon(): Rig {
   inner.scale.setScalar(DRAGON_SCALE);
   group.add(inner);
 
-  const scaleBump = makeScaleBump();
+  // A real tangent-space normal map rather than a bump map: same source canvas,
+  // but it survives the wing's per-frame normal recompute and, unlike bump,
+  // actually perturbs the environment reflection across every scale.
+  const scaleCv = makeScaleHeight();
+  const scaleNormal = heightToNormal(scaleCv, 2.6);
+  const scaleRough = heightToRoughness(scaleCv, 0.42, 0.88);
+
   const scalesMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.78,
-    metalness: 0.18,
-    bumpMap: scaleBump,
-    bumpScale: 1.1,
-    roughnessMap: scaleBump,
+    roughness: 1,
+    metalness: 0.24,
+    normalMap: scaleNormal,
+    roughnessMap: scaleRough,
   });
-  const redMat = new THREE.MeshStandardMaterial({ color: RED, roughness: 0.55, metalness: 0.14, bumpMap: scaleBump, bumpScale: 0.7 });
-  const redDarkMat = new THREE.MeshStandardMaterial({ color: RED_D, roughness: 0.6, metalness: 0.1 });
-  const hornMat = new THREE.MeshStandardMaterial({ color: HORN, roughness: 0.32, metalness: 0.3 });
-  const hornDarkMat = new THREE.MeshStandardMaterial({ color: HORN_D, roughness: 0.4, metalness: 0.25 });
-  const clawMat = new THREE.MeshStandardMaterial({ color: CLAW, roughness: 0.35, metalness: 0.1 });
+  scalesMat.normalScale.set(1.35, 1.35);
+  scalesMat.envMapIntensity = 1.5;
+
+  const redMat = new THREE.MeshStandardMaterial({
+    color: RED, roughness: 0.95, metalness: 0.16, normalMap: scaleNormal, roughnessMap: scaleRough,
+  });
+  redMat.normalScale.set(0.8, 0.8);
+  redMat.envMapIntensity = 1.35;
+  const redDarkMat = new THREE.MeshStandardMaterial({ color: RED_D, roughness: 0.6, metalness: 0.12 });
+  redDarkMat.envMapIntensity = 1.2;
+  const hornMat = new THREE.MeshStandardMaterial({ color: HORN, roughness: 0.3, metalness: 0.35 });
+  hornMat.envMapIntensity = 1.9;
+  const hornDarkMat = new THREE.MeshStandardMaterial({ color: HORN_D, roughness: 0.38, metalness: 0.28 });
+  hornDarkMat.envMapIntensity = 1.7;
+  const clawMat = new THREE.MeshStandardMaterial({ color: CLAW, roughness: 0.3, metalness: 0.12 });
+  clawMat.envMapIntensity = 1.8;
+
   const membraneMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color("#8a2c1f"),
     emissive: new THREE.Color("#38100a"),
@@ -144,6 +161,16 @@ function buildDragon(): Rig {
     transparent: true,
     opacity: 0.96,
   });
+  // Backlit skin: the membrane is thin, so grazing angles should bleed light
+  // through it instead of going flat black against the sky.
+  membraneMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <emissivemap_fragment>",
+      `#include <emissivemap_fragment>
+       float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 2.4);
+       totalEmissiveRadiance += vec3(1.0, 0.36, 0.16) * rim * 0.9;`,
+    );
+  };
   const crestMat = new THREE.MeshStandardMaterial({
     color: HORN_D,
     side: THREE.DoubleSide,
@@ -612,6 +639,7 @@ function buildDragon(): Rig {
     nostrilMat,
     mouthGlowMat,
     eyeMat,
+    textures: [scaleNormal, scaleRough],
   };
 }
 
@@ -676,6 +704,7 @@ export function Dragon() {
           else mat?.dispose();
         }
       });
+      for (const t of rig.textures) t.dispose();
     };
   }, [rig]);
 

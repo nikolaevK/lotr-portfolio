@@ -9,6 +9,7 @@ import { game } from "@/state/store";
 import { morph } from "@/three/Terrain";
 import { audio } from "@/audio/engine";
 import { createFlightState, stepFlight, EAGLE_TUNING } from "@/three/flight";
+import { heightToNormal } from "@/three/materials";
 
 // ── golden-eagle palette ─────────────────────────────────────────────────────
 const BODY_DK = new THREE.Color("#42301c");
@@ -70,13 +71,30 @@ function makeFeatherTexture(shaft: string, barbA: string, barbB: string, band?: 
   ctx.closePath();
   ctx.fill();
   ctx.globalCompositeOperation = "source-over";
-  const tex = new THREE.CanvasTexture(cv);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
+  return cv;
 }
 
-function makeSpeckleBump() {
+/** Feather card material: albedo + barb relief from the same drawing. */
+function featherMaterial(cv: HTMLCanvasElement) {
+  const map = new THREE.CanvasTexture(cv);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 4;
+  const normalMap = heightToNormal(cv, 1.4);
+  const mat = new THREE.MeshStandardMaterial({
+    map,
+    normalMap,
+    transparent: true,
+    alphaTest: 0.42,
+    side: THREE.DoubleSide,
+    roughness: 0.88,
+    metalness: 0.02,
+  });
+  mat.normalScale.set(0.7, 0.7);
+  mat.envMapIntensity = 0.9;
+  return { mat, textures: [map, normalMap] };
+}
+
+function makeSpeckleHeight() {
   const S = 256;
   const cv = document.createElement("canvas");
   cv.width = cv.height = S;
@@ -100,9 +118,7 @@ function makeSpeckleBump() {
     ctx.ellipse(x, y, r, r * 0.55, rand(), 0, Math.PI * 2);
     ctx.fill();
   }
-  const tex = new THREE.CanvasTexture(cv);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  return tex;
+  return cv;
 }
 
 interface Feather {
@@ -139,6 +155,7 @@ interface EagleRig {
   wings: WingSide[];
   legs: THREE.Group[];
   eyeMat: THREE.MeshStandardMaterial;
+  textures: THREE.Texture[];
 }
 
 function buildEagle(): EagleRig {
@@ -149,44 +166,37 @@ function buildEagle(): EagleRig {
   const bodyGroup = new THREE.Group();
   inner.add(bodyGroup);
 
-  const speckle = makeSpeckleBump();
+  const speckleCv = makeSpeckleHeight();
+  const speckleNormal = heightToNormal(speckleCv, 1.6);
+  const textures: THREE.Texture[] = [speckleNormal];
   const bodyMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.92,
     metalness: 0.04,
-    bumpMap: speckle,
-    bumpScale: 0.5,
+    normalMap: speckleNormal,
   });
-  const wingTex = makeFeatherTexture("#241708", "#4a3018", "#5d4226");
-  const wingMat = new THREE.MeshStandardMaterial({
-    map: wingTex,
-    transparent: true,
-    alphaTest: 0.42,
-    side: THREE.DoubleSide,
-    roughness: 0.9,
-    metalness: 0.03,
-  });
-  const goldTex = makeFeatherTexture("#5d3f1a", "#b8863c", "#9a6f30");
-  const goldMat = new THREE.MeshStandardMaterial({
-    map: goldTex,
-    transparent: true,
-    alphaTest: 0.42,
-    side: THREE.DoubleSide,
-    roughness: 0.88,
-  });
-  const tailTex = makeFeatherTexture("#8a7a5c", "#e8e0cc", "#d6cdb8", "#3a2c1a");
-  const tailMat = new THREE.MeshStandardMaterial({
-    map: tailTex,
-    transparent: true,
-    alphaTest: 0.42,
-    side: THREE.DoubleSide,
-    roughness: 0.9,
-  });
-  const beakMat = new THREE.MeshStandardMaterial({ color: "#d8a83c", roughness: 0.45, metalness: 0.15 });
-  const beakTipMat = new THREE.MeshStandardMaterial({ color: "#35281a", roughness: 0.4 });
-  const tarsusMat = new THREE.MeshStandardMaterial({ color: "#e8c04a", roughness: 0.7 });
-  const clawMat = new THREE.MeshStandardMaterial({ color: "#241c12", roughness: 0.35 });
-  const eyeMat = new THREE.MeshStandardMaterial({ color: "#1c1006", emissive: "#ffb733", emissiveIntensity: 1.5 });
+  bodyMat.normalScale.set(0.85, 0.85);
+  bodyMat.envMapIntensity = 0.95;
+
+  const wing = featherMaterial(makeFeatherTexture("#241708", "#4a3018", "#5d4226"));
+  const gold = featherMaterial(makeFeatherTexture("#5d3f1a", "#b8863c", "#9a6f30"));
+  const tail = featherMaterial(makeFeatherTexture("#8a7a5c", "#e8e0cc", "#d6cdb8", "#3a2c1a"));
+  const wingMat = wing.mat;
+  const goldMat = gold.mat;
+  const tailMat = tail.mat;
+  textures.push(...wing.textures, ...gold.textures, ...tail.textures);
+
+  // keratin: beak and talons are the glossiest thing on the bird
+  const beakMat = new THREE.MeshStandardMaterial({ color: "#d8a83c", roughness: 0.32, metalness: 0.2 });
+  beakMat.envMapIntensity = 1.8;
+  const beakTipMat = new THREE.MeshStandardMaterial({ color: "#35281a", roughness: 0.28 });
+  beakTipMat.envMapIntensity = 1.9;
+  const tarsusMat = new THREE.MeshStandardMaterial({ color: "#e8c04a", roughness: 0.6 });
+  tarsusMat.envMapIntensity = 1.3;
+  const clawMat = new THREE.MeshStandardMaterial({ color: "#241c12", roughness: 0.26 });
+  clawMat.envMapIntensity = 2.0;
+  const eyeMat = new THREE.MeshStandardMaterial({ color: "#1c1006", emissive: "#ffb733", emissiveIntensity: 1.5, roughness: 0.15 });
+  eyeMat.envMapIntensity = 2.2;
 
   // ── body hull (ring-lofted, vertex-colored) ──
   const SP: [number, number][] = [
@@ -251,7 +261,8 @@ function buildEagle(): EagleRig {
   const skull = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 12), bodyMat);
   skull.scale.set(1.18, 0.95, 0.88);
   // paint the skull golden: cheap trick — separate gold-tinted material
-  const headMat = new THREE.MeshStandardMaterial({ color: "#8a6432", roughness: 0.85, bumpMap: speckle, bumpScale: 0.35 });
+  const headMat = new THREE.MeshStandardMaterial({ color: "#8a6432", roughness: 0.85, normalMap: speckleNormal });
+  headMat.normalScale.set(0.6, 0.6);
   skull.material = headMat;
   headGroup.add(skull);
   // golden nape crest — small feathers sweeping back
@@ -367,17 +378,22 @@ function buildEagle(): EagleRig {
     }
     // secondaries — along the forearm, trailing
     const secondaries: Feather[] = [];
-    for (let i = 0; i < 7; i++) {
-      const t = i / 6;
+    for (let i = 0; i < 9; i++) {
+      const t = i / 8;
       secondaries.push(
-        mkFeather(fore, wingMat, sd, 0.44, 1.9 - t * 0.35, 1.08 + t * 0.14, t, 0.02, -0.015 * i - 0.01, 0.22 + t * 1.4),
+        mkFeather(fore, wingMat, sd, 0.44, 1.92 - t * 0.38, 1.08 + t * 0.14, t, 0.02, -0.013 * i - 0.01, 0.18 + t * 1.5),
       );
     }
-    // coverts — broad golden shoulder feathers hiding the bases
+    // coverts — the overlapping shingle that hides every quill root. Without
+    // these rows the wing reads as a fan of cards rather than a bird's arm.
     const coverts: Feather[] = [];
-    for (let i = 0; i < 3; i++) {
-      const t = i / 2;
-      coverts.push(mkFeather(hum, goldMat, sd, 0.62, 1.2, 0.95, t, 0.05, 0.03, 0.3 + t * 0.85));
+    for (let i = 0; i < 4; i++) {
+      const t = i / 3;
+      coverts.push(mkFeather(hum, goldMat, sd, 0.64, 1.25, 0.95, t, 0.05, 0.05, 0.28 + t * 0.95));
+    }
+    for (let i = 0; i < 5; i++) {
+      const t = i / 4;
+      coverts.push(mkFeather(fore, goldMat, sd, 0.5, 1.02 - t * 0.16, 1.02 + t * 0.1, t, 0.06, 0.06, 0.3 + t * 1.35));
     }
     // alula — the little thumb-tuft at the wrist
     const alula = mkFeather(hand, goldMat, sd, 0.26, 0.85, -0.42, 0, 0.02, 0.02, 0);
@@ -416,7 +432,8 @@ function buildEagle(): EagleRig {
   }
 
   // ── tucked legs & talons ──
-  const thighMat = new THREE.MeshStandardMaterial({ color: "#4e3820", roughness: 0.95, bumpMap: speckle, bumpScale: 0.4 });
+  const thighMat = new THREE.MeshStandardMaterial({ color: "#4e3820", roughness: 0.95, normalMap: speckleNormal });
+  thighMat.normalScale.set(0.7, 0.7);
   const legs: THREE.Group[] = [];
   for (const sd of [-1, 1]) {
     const leg = new THREE.Group();
@@ -447,7 +464,7 @@ function buildEagle(): EagleRig {
     legs.push(leg);
   }
 
-  return { group, bodyGroup, headGroup, mandible, tailPivot, tailFeathers, wings, legs, eyeMat };
+  return { group, bodyGroup, headGroup, mandible, tailPivot, tailFeathers, wings, legs, eyeMat, textures };
 }
 
 // asymmetric flap wave — fast downstroke, slow recovery
@@ -490,6 +507,7 @@ export function Eagle() {
           else mat?.dispose();
         }
       });
+      for (const t of rig.textures) t.dispose();
     };
   }, [rig]);
 

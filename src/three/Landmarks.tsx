@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame, type ThreeElements } from "@react-three/fiber";
 import * as THREE from "three";
-import { MAP_W, MAP_H, SEA_LEVEL, SITES, toWorldX, toWorldZ } from "@/data/content";
+import { SEA_LEVEL, SITES, toWorldX, toWorldZ } from "@/data/content";
 import { heightAt } from "@/three/noise";
 import { morph } from "@/three/Terrain";
 import { Plume } from "@/three/Particles";
+import { Kit, disposeGroup, type UVScales } from "@/three/kit";
+import { pbr, plain, surfaces } from "@/three/materials";
 import { useGame } from "@/state/store";
 
 /** Landmark point light — skipped on low quality (every light costs per-fragment
@@ -17,42 +19,87 @@ function Lamp(props: ThreeElements["pointLight"]) {
   return <pointLight {...props} />;
 }
 
-// shared materials
-const M = {
-  whiteStone: new THREE.MeshStandardMaterial({ color: "#cfc8b8", roughness: 0.85 }),
-  whiteTrim: new THREE.MeshStandardMaterial({ color: "#e9e4d6", roughness: 0.7 }),
-  darkStone: new THREE.MeshStandardMaterial({ color: "#4a4038", roughness: 0.95 }),
-  greyStone: new THREE.MeshStandardMaterial({ color: "#8a8378", roughness: 0.95 }),
-  blackTower: new THREE.MeshStandardMaterial({ color: "#17100e", roughness: 0.55, metalness: 0.4 }),
-  obsidian: new THREE.MeshStandardMaterial({ color: "#0d0a09", roughness: 0.35, metalness: 0.5 }),
-  wood: new THREE.MeshStandardMaterial({ color: "#6b4d1e", roughness: 0.9 }),
-  woodDark: new THREE.MeshStandardMaterial({ color: "#4a3418", roughness: 0.92 }),
-  thatch: new THREE.MeshStandardMaterial({ color: "#b89a52", roughness: 0.95 }),
-  grass: new THREE.MeshStandardMaterial({ color: "#7f9e4e", roughness: 0.95 }),
-  doorGreen: new THREE.MeshStandardMaterial({ color: "#4e7a2e", roughness: 0.6 }),
-  doorYellow: new THREE.MeshStandardMaterial({ color: "#c9963c", roughness: 0.6 }),
-  doorRed: new THREE.MeshStandardMaterial({ color: "#8c2e1e", roughness: 0.6 }),
-  doorBlue: new THREE.MeshStandardMaterial({ color: "#3e5a7a", roughness: 0.6 }),
-  brass: new THREE.MeshStandardMaterial({ color: "#d8b04e", roughness: 0.35, metalness: 0.7 }),
-  trunk: new THREE.MeshStandardMaterial({ color: "#5c4222", roughness: 0.95 }),
-  silverTrunk: new THREE.MeshStandardMaterial({ color: "#b8b4a8", roughness: 0.8 }),
-  leaf: new THREE.MeshStandardMaterial({ color: "#5e7a38", roughness: 0.9 }),
-  goldLeaf: new THREE.MeshStandardMaterial({ color: "#d8b04e", roughness: 0.75, emissive: "#6a5010", emissiveIntensity: 0.35 }),
-  paleLeaf: new THREE.MeshStandardMaterial({ color: "#e8e8dc", roughness: 0.8, emissive: "#5a5a48", emissiveIntensity: 0.15 }),
-  elfStone: new THREE.MeshStandardMaterial({ color: "#e8e2d2", roughness: 0.6, metalness: 0.15 }),
-  gold: new THREE.MeshStandardMaterial({ color: "#caa244", roughness: 0.4, metalness: 0.65, emissive: "#4a3608", emissiveIntensity: 0.3 }),
-  window: new THREE.MeshStandardMaterial({ color: "#2c1f0d", emissive: "#ffbf5e", emissiveIntensity: 1.6 }),
-  lava: new THREE.MeshStandardMaterial({ color: "#2a1008", emissive: "#ff4a12", emissiveIntensity: 2.6, roughness: 0.8 }),
-  lavaFlow: new THREE.MeshStandardMaterial({ color: "#1c0a06", emissive: "#ff5a16", emissiveIntensity: 2.2, roughness: 0.9, side: THREE.DoubleSide }),
-  forge: new THREE.MeshStandardMaterial({ color: "#241a12", emissive: "#ff7a22", emissiveIntensity: 1.6, roughness: 0.8 }),
-  sail: new THREE.MeshStandardMaterial({ color: "#f2ead2", roughness: 0.9, side: THREE.DoubleSide }),
-  holly: new THREE.MeshStandardMaterial({ color: "#2e4d2a", roughness: 0.9 }),
-  autumn: new THREE.MeshStandardMaterial({ color: "#b8813c", roughness: 0.9 }),
-  blackWater: new THREE.MeshStandardMaterial({ color: "#0a1214", roughness: 0.08, metalness: 0.6 }),
-  pond: new THREE.MeshStandardMaterial({ color: "#3f6b78", roughness: 0.15, metalness: 0.4 }),
-  banner: new THREE.MeshStandardMaterial({ color: "#f4efe2", roughness: 0.85, side: THREE.DoubleSide }),
-  bannerGreen: new THREE.MeshStandardMaterial({ color: "#3e6b34", roughness: 0.85, side: THREE.DoubleSide }),
-  ruinStone: new THREE.MeshStandardMaterial({ color: "#7a7268", roughness: 0.95 }),
+// ── the shared palette of surfaces ──────────────────────────────────────────
+// Tints multiply a greyscale albedo, so they run brighter than the colour you
+// want out the other side. Everything here is merged per-key by the kit, so
+// adding a material costs one draw call per landmark that uses it — keep the
+// list short and lean on per-part tinting for variety.
+
+let MATS: Record<string, THREE.Material> | null = null;
+
+function mats() {
+  if (MATS) return MATS;
+  const s = surfaces();
+  MATS = {
+    // masonry
+    stone: pbr(s.ashlar, "#b4aa9a", { metalness: 0.02 }),
+    white: pbr(s.ashlar, "#efe9d8", { metalness: 0.04, envMapIntensity: 1.15 }),
+    elf: pbr(s.ashlar, "#f3ecdb", { metalness: 0.1, roughness: 0.82, normalScale: 0.7, envMapIntensity: 1.3 }),
+    dwarf: pbr(s.ashlar, "#8e8070", { metalness: 0.06, normalScale: 1.25 }),
+    dark: pbr(s.rubble, "#6f6355", { normalScale: 1.15 }),
+    ruin: pbr(s.rubble, "#a89e90"),
+    rock: pbr(s.rock, "#9a8f7c"),
+    black: pbr(s.ashlar, "#3a3330", { metalness: 0.4, roughness: 0.68, envMapIntensity: 1.5 }),
+    obsidian: pbr(s.rock, "#241e1c", { metalness: 0.55, roughness: 0.42, normalScale: 0.6, envMapIntensity: 1.8 }),
+    // carpentry & roofing
+    timber: pbr(s.timber, "#c69a5e"),
+    beam: pbr(s.timber, "#7a5a2e", { normalScale: 1.2 }),
+    thatch: pbr(s.thatch, "#e2c07a", { normalScale: 1.3 }),
+    slate: pbr(s.slate, "#a8b2bc", { metalness: 0.06, roughness: 0.9 }),
+    // metals
+    gold: pbr(s.metal, "#e8bb52", { metalness: 0.88, roughness: 0.42, envMapIntensity: 1.6 }),
+    bronze: pbr(s.metal, "#a07a42", { metalness: 0.82, roughness: 0.5, envMapIntensity: 1.4 }),
+    silver: pbr(s.metal, "#d6dae0", { metalness: 0.85, roughness: 0.34, envMapIntensity: 1.7 }),
+    // organics
+    turf: pbr(s.organic, "#9dbb62", { roughness: 1 }),
+    earth: pbr(s.organic, "#9a7c54", { roughness: 1 }),
+    bark: pbr(s.timber, "#8a6438", { normalScale: 1.4 }),
+    paleBark: pbr(s.timber, "#dcd8cc", { normalScale: 0.9 }),
+    leaf: pbr(s.organic, "#7d9c4c", { roughness: 1 }),
+    darkLeaf: pbr(s.organic, "#4e6b3e", { roughness: 1 }),
+    goldLeaf: pbr(s.organic, "#e8c05e", { roughness: 0.85, emissive: "#5a4210", emissiveIntensity: 0.4 }),
+    paleLeaf: pbr(s.organic, "#eef0e2", { roughness: 0.9, emissive: "#4a4c3c", emissiveIntensity: 0.2 }),
+    autumn: pbr(s.organic, "#dda45c", { roughness: 0.95 }),
+    // flat props — `door` is white so per-part tints carry the colour
+    door: plain("#ffffff", { roughness: 0.5, envMapIntensity: 1.2 }),
+    brass: plain("#d8b04e", { roughness: 0.3, metalness: 0.8, envMapIntensity: 1.6 }),
+    window: plain("#2c1f0d", { emissive: "#ffbf5e", emissiveIntensity: 1.8, roughness: 0.4 }),
+    lava: plain("#2a1008", { emissive: "#ff4a12", emissiveIntensity: 2.6, roughness: 0.85 }),
+    forge: plain("#241a12", { emissive: "#ff7a22", emissiveIntensity: 1.6, roughness: 0.8 }),
+    water: plain("#6fa8b4", { roughness: 0.07, metalness: 0.1, envMapIntensity: 2.4 }),
+    blackWater: plain("#16232a", { roughness: 0.05, metalness: 0.25, envMapIntensity: 2.6 }),
+    cloth: plain("#f4efe2", { roughness: 0.85, side: THREE.DoubleSide }),
+    clothGreen: plain("#3e6b34", { roughness: 0.85, side: THREE.DoubleSide }),
+  };
+  return MATS;
+}
+
+/** World units covered by one texture tile, per material. */
+const UV: UVScales = {
+  stone: 3.6, white: 3.6, elf: 4.2, dwarf: 4.4, dark: 3.2, ruin: 3.2, rock: 9,
+  black: 4.6, obsidian: 7, timber: 2.6, beam: 2.2, thatch: 3.2, slate: 2.4,
+  gold: 3, bronze: 3, silver: 3, turf: 7, earth: 7, bark: 1.8, paleBark: 1.8,
+  leaf: 3.4, darkLeaf: 3.4, goldLeaf: 3.4, paleLeaf: 3.4, autumn: 3.4,
+};
+
+/** Build a landmark's static geometry once, merged down to a few draw calls. */
+function useBuilt(build: (k: Kit) => void) {
+  const group = useMemo(() => {
+    const k = new Kit();
+    build(k);
+    return k.finish(mats(), UV);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => () => disposeGroup(group), [group]);
+  return group;
+}
+
+const rng = (seed: number) => {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
 };
 
 // beyond this the fog has mostly swallowed a landmark — skip its draw calls
@@ -66,186 +113,406 @@ function Grounded({
   const x = toWorldX(u);
   const z = toWorldZ(v);
   const baseY = useMemo(() => heightAt(x, z), [x, z]);
+  // manual matrix: once the morph settles, y stops changing and the whole
+  // subtree skips its per-frame matrix recompute instead of being re-dirtied
+  // 60 times a second by an unchanged position write
+  useEffect(() => {
+    ref.current?.updateMatrix();
+  }, []);
   useFrame(({ camera }) => {
-    if (ref.current) {
-      const dx = camera.position.x - x;
-      const dz = camera.position.z - z;
-      ref.current.visible = morph.value > 0.02 && dx * dx + dz * dz < CULL_DIST_SQ;
-      if (ref.current.visible) ref.current.position.y = baseY * morph.value + yOffset;
+    const g = ref.current;
+    if (!g) return;
+    const dx = camera.position.x - x;
+    const dz = camera.position.z - z;
+    g.visible = morph.value > 0.02 && dx * dx + dz * dz < CULL_DIST_SQ;
+    if (g.visible) {
+      const y = baseY * morph.value + yOffset;
+      if (y !== g.position.y) {
+        g.position.y = y;
+        g.updateMatrix();
+      }
     }
   });
   return (
-    <group ref={ref} position={[x, 0, z]}>
+    <group ref={ref} position={[x, 0, z]} matrixAutoUpdate={false}>
       {children}
     </group>
   );
 }
 
-function Tree({
-  x = 0, z = 0, s = 1, mat = M.leaf, trunkMat = M.trunk,
-}: { x?: number; z?: number; s?: number; mat?: THREE.Material; trunkMat?: THREE.Material }) {
-  return (
-    <group position={[x, 0, z]} scale={s}>
-      <mesh material={trunkMat} position={[0, 3.2, 0]} castShadow>
-        <cylinderGeometry args={[0.5, 0.9, 6.4, 7]} />
-      </mesh>
-      <mesh material={mat} position={[0, 8.2, 0]} castShadow>
-        <sphereGeometry args={[3.8, 10, 8]} />
-      </mesh>
-      <mesh material={mat} position={[1.8, 6.2, 0.9]} castShadow>
-        <sphereGeometry args={[2.3, 8, 6]} />
-      </mesh>
-      <mesh material={mat} position={[-1.7, 6.6, -0.7]} castShadow>
-        <sphereGeometry args={[2.0, 8, 6]} />
-      </mesh>
-    </group>
-  );
+// ── shared props ────────────────────────────────────────────────────────────
+
+/** A broadleaf tree: flared trunk, a few limbs, a clustered canopy. */
+function tree(
+  k: Kit,
+  o: { x: number; z: number; s?: number; leaf?: string; bark?: string; seed?: number },
+) {
+  const s = o.s ?? 1;
+  const leaf = o.leaf ?? "leaf";
+  const bark = o.bark ?? "bark";
+  const r = rng(o.seed ?? Math.round((o.x * 73 + o.z * 131 + 997) * 7) + 1);
+  const trunkH = 6.4 * s;
+  k.cyl(bark, 0.42 * s, 0.95 * s, trunkH, 8, { x: o.x, y: trunkH / 2, z: o.z });
+  // root flare
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + r();
+    k.cone(bark, 0.34 * s, 1.5 * s, 5, {
+      x: o.x + Math.cos(a) * 0.7 * s,
+      y: 0.5 * s,
+      z: o.z + Math.sin(a) * 0.7 * s,
+      rx: Math.sin(a) * 0.5,
+      rz: -Math.cos(a) * 0.5,
+    });
+  }
+  // limbs
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.7;
+    k.cyl(bark, 0.14 * s, 0.3 * s, 3.2 * s, 6, {
+      x: o.x + Math.cos(a) * 0.9 * s,
+      y: trunkH * 0.86,
+      z: o.z + Math.sin(a) * 0.9 * s,
+      rx: Math.sin(a) * 0.75,
+      rz: -Math.cos(a) * 0.75,
+    });
+  }
+  // canopy — several overlapping lobes read as foliage, one sphere reads as a lollipop
+  const lobes: [number, number, number, number][] = [
+    [0, 8.6, 0, 3.9], [1.9, 7.2, 1.0, 2.6], [-1.8, 7.6, -0.8, 2.4],
+    [0.6, 10.0, -1.5, 2.2], [-1.1, 9.6, 1.6, 2.0],
+  ];
+  for (const [lx, ly, lz, lr] of lobes) {
+    k.sphere(leaf, lr * s, 10, 8, {
+      x: o.x + lx * s,
+      y: ly * s,
+      z: o.z + lz * s,
+      s: [1, 0.82 + r() * 0.3, 1],
+      shade: 0.86 + r() * 0.28,
+    });
+  }
 }
 
-// ── The Shire: Hobbiton with mill ────────────────────────────────────────────
-function HobbitDoor({ a, r, mat, mound }: { a: number; r: number; mat: THREE.Material; mound: number }) {
-  const dx = Math.cos(a) * r;
-  const dz = Math.sin(a) * r;
-  const ry = -a + Math.PI / 2;
-  return (
-    <group position={[dx, 2.3, dz]} rotation={[0, ry, 0]}>
-      <mesh material={M.wood}>
-        <torusGeometry args={[2.2, 0.45, 8, 22]} />
-      </mesh>
-      <mesh material={mat} position={[0, 0, -0.12]}>
-        <circleGeometry args={[2.2, 22]} />
-      </mesh>
-      <mesh material={M.brass} position={[0.75, 0, 0.18]}>
-        <sphereGeometry args={[0.17, 7, 6]} />
-      </mesh>
-      {/* round windows either side */}
-      {[-1, 1].map((s2) => (
-        <group key={s2} position={[s2 * 4.6 * (mound ? 1 : 0.9), 0.3, -0.5]}>
-          <mesh material={M.wood}>
-            <torusGeometry args={[0.85, 0.2, 6, 14]} />
-          </mesh>
-          <mesh material={M.window} position={[0, 0, -0.06]}>
-            <circleGeometry args={[0.85, 14]} />
-          </mesh>
-        </group>
-      ))}
-    </group>
-  );
+/** A conifer — hollies of Eregion, the dead pines of Isengard. */
+function conifer(k: Kit, o: { x: number; z: number; s?: number; leaf?: string; bark?: string }) {
+  const s = o.s ?? 1;
+  const leaf = o.leaf ?? "darkLeaf";
+  k.cyl(o.bark ?? "bark", 0.26 * s, 0.55 * s, 5.4 * s, 7, { x: o.x, y: 2.7 * s, z: o.z });
+  for (let i = 0; i < 4; i++) {
+    k.cone(leaf, (2.7 - i * 0.6) * s, 3.0 * s, 9, {
+      x: o.x, y: (5.2 + i * 1.9) * s, z: o.z, shade: 0.88 + i * 0.06,
+    });
+  }
 }
 
-function Mill() {
-  const wheel = useRef<THREE.Mesh>(null);
-  useFrame((_, dt) => {
-    if (wheel.current) wheel.current.rotation.z -= dt * 0.5;
+/** A pitched-roof dwelling. Used across Rohan, Dale and the tiers of Gondor. */
+function cottage(
+  k: Kit,
+  o: {
+    x: number; z: number; a?: number; w?: number; d?: number; h?: number; s?: number;
+    wall?: string; roof?: string; lit?: boolean;
+  },
+) {
+  const s = o.s ?? 1;
+  const w = (o.w ?? 4.4) * s;
+  const d = (o.d ?? 3.2) * s;
+  const h = (o.h ?? 2.6) * s;
+  const a = o.a ?? 0;
+  const wall = o.wall ?? "timber";
+  const roof = o.roof ?? "thatch";
+  const ca = Math.cos(a);
+  const sa = Math.sin(a);
+  // local (dx, dz) → world, rotated about the cottage centre
+  const px = (dx: number, dz: number) => o.x + dx * ca - dz * sa;
+  const pz = (dx: number, dz: number) => o.z + dx * sa + dz * ca;
+
+  k.box(wall, w, h, d, { x: o.x, y: h / 2, z: o.z, ry: -a });
+  // corner posts read as timber framing
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      k.box("beam", 0.22 * s, h, 0.22 * s, { x: px(sx * w * 0.48, sz * d * 0.48), y: h / 2, z: pz(sx * w * 0.48, sz * d * 0.48), ry: -a });
+    }
+  }
+  // gable roof: two slopes plus the end triangles
+  const pitch = 0.72;
+  const slope = (d / 2) / Math.cos(pitch);
+  for (const sz of [-1, 1]) {
+    k.box(roof, w + 0.9 * s, 0.34 * s, slope * 2.05, {
+      x: px(0, (sz * d) / 4),
+      y: h + (Math.tan(pitch) * d) / 4,
+      z: pz(0, (sz * d) / 4),
+      ry: -a,
+      rx: sz * pitch,
+    });
+  }
+  for (const sx of [-1, 1]) {
+    k.wedge(wall, d, Math.tan(pitch) * d, 0.3 * s, {
+      x: px((sx * w) / 2, 0),
+      y: h + (Math.tan(pitch) * d) / 2,
+      z: pz((sx * w) / 2, 0),
+      ry: -a + Math.PI / 2,
+    });
+  }
+  // ridge
+  k.box("beam", w + 0.4 * s, 0.2 * s, 0.24 * s, { x: o.x, y: h + (Math.tan(pitch) * d) / 2, z: o.z, ry: -a });
+  // chimney
+  k.box("stone", 0.6 * s, 2.4 * s, 0.6 * s, { x: px(w * 0.3, d * 0.2), y: h + 1.1 * s, z: pz(w * 0.3, d * 0.2), ry: -a });
+  // door and a lit window
+  k.box("beam", 0.9 * s, 1.6 * s, 0.14 * s, { x: px(0, d * 0.5), y: 0.8 * s, z: pz(0, d * 0.5), ry: -a });
+  if (o.lit !== false) {
+    k.box("window", 0.55 * s, 0.55 * s, 0.1 * s, { x: px(w * 0.28, d * 0.52), y: h * 0.62, z: pz(w * 0.28, d * 0.52), ry: -a, flat: true });
+  }
+}
+
+// ── The Shire: Hobbiton on the Hill ─────────────────────────────────────────
+
+/** A round green door set into a mound, with its windows, stoop and lamp. */
+function hobbitHole(
+  k: Kit,
+  o: { x: number; z: number; a: number; r: number; s?: number; door: string; wins?: number },
+) {
+  // `door` is a colour: the door material is white so the tint does the work
+  const s = o.s ?? 1;
+  const dx = o.x + Math.cos(o.a) * o.r;
+  const dz = o.z + Math.sin(o.a) * o.r;
+  const ry = -o.a + Math.PI / 2;
+  const ca = Math.cos(o.a);
+  const sa = Math.sin(o.a);
+  // a point `out` units further from the mound centre and `side` along the face
+  const at = (side: number, out: number): [number, number] => [
+    dx + ca * out - sa * side,
+    dz + sa * out + ca * side,
+  ];
+
+  // recessed porch cut into the turf
+  const [bx, bz] = at(0, -0.5 * s);
+  k.cyl("earth", 2.9 * s, 3.1 * s, 1.2 * s, 16, { x: bx, y: 2.3 * s, z: bz, rx: Math.PI / 2, ry });
+  // door frame, leaf and knob
+  k.add("beam", new THREE.TorusGeometry(2.2 * s, 0.26 * s, 8, 24), { x: dx, y: 2.3 * s, z: dz, ry });
+  const [px0, pz0] = at(0, 0.06 * s);
+  k.cyl("door", 2.16 * s, 2.16 * s, 0.22 * s, 22, { x: px0, y: 2.3 * s, z: pz0, rx: Math.PI / 2, ry, tint: o.door });
+  const [kx, kz] = at(0.72 * s, 0.24 * s);
+  k.sphere("brass", 0.17 * s, 8, 6, { x: kx, y: 2.3 * s, z: kz });
+  // stone step and a path away from the door
+  const [sx0, sz0] = at(0, 1.5 * s);
+  k.box("stone", 3.6 * s, 0.4 * s, 1.6 * s, { x: sx0, y: 0.22 * s, z: sz0, ry });
+  for (let i = 0; i < 4; i++) {
+    const [gx, gz] = at((i % 2 ? 0.5 : -0.5) * s, (2.6 + i * 1.5) * s);
+    k.cyl("stone", 0.7 * s, 0.72 * s, 0.18 * s, 7, { x: gx, y: 0.1, z: gz, shade: 1.05 });
+  }
+  // round windows either side
+  const n = o.wins ?? 2;
+  for (let i = 0; i < n; i++) {
+    const side = (i === 0 ? -1 : 1) * 4.5 * s;
+    const [wx, wz] = at(side, -0.35 * s);
+    k.add("beam", new THREE.TorusGeometry(0.9 * s, 0.2 * s, 6, 16), { x: wx, y: 2.6 * s, z: wz, ry });
+    const [gx, gz] = at(side, -0.2 * s);
+    k.cyl("window", 0.86 * s, 0.86 * s, 0.1 * s, 14, { x: gx, y: 2.6 * s, z: gz, rx: Math.PI / 2, ry, flat: true });
+  }
+}
+
+function buildHobbiton(k: Kit) {
+  const r = rng(4711);
+  // the Hill and Bagshot Row: two turfed mounds
+  k.sphere("turf", 18, 26, 16, { y: 2.0, s: [1, 0.78, 1] }, Math.PI * 2, 0, Math.PI / 2);
+  k.sphere("turf", 11, 20, 12, { x: -16, y: 1.0, z: -12, s: [1, 0.82, 1] }, Math.PI * 2, 0, Math.PI / 2);
+
+  // radii sit just proud of the mound's surface (r 18, squashed to 0.78) —
+  // any less and the door is buried inside the hill it belongs to
+  const doors = [
+    { a: 0.1, door: "#5c8f34", r: 17.9 },
+    { a: 1.25, door: "#d0a244", r: 17.8 },
+    { a: 2.35, door: "#9c3624", r: 17.9 },
+    { a: 3.6, door: "#46688c", r: 17.7 },
+    { a: 4.9, door: "#c8a03c", r: 17.9 },
+  ];
+  for (const d of doors) hobbitHole(k, { x: 0, z: 0, a: d.a, r: d.r, door: d.door });
+  // Bagshot Row — smaller doors in the lower mound
+  const row = ["#9c3624", "#5c8f34", "#d0a244"];
+  row.forEach((door, i) => {
+    hobbitHole(k, { x: -16, z: -12, a: 0.5 + i, r: 10.9, s: 0.62, door, wins: 1 });
   });
-  return (
-    <group position={[26, 0, 14]} rotation={[0, -0.7, 0]}>
-      <mesh material={M.greyStone} position={[0, 5.5, 0]} castShadow>
-        <cylinderGeometry args={[3.4, 4.0, 11, 10]} />
-      </mesh>
-      <mesh material={M.thatch} position={[0, 12.3, 0]} castShadow>
-        <coneGeometry args={[4.4, 4.4, 10]} />
-      </mesh>
-      <mesh material={M.window} position={[0, 7, 3.3]}>
-        <circleGeometry args={[0.6, 10]} />
-      </mesh>
-      {/* waterwheel */}
-      <mesh ref={wheel} material={M.woodDark} position={[4.6, 3.2, 0]} rotation={[0, 0, 0]} castShadow>
-        <torusGeometry args={[3.0, 0.5, 6, 14]} />
-      </mesh>
-    </group>
-  );
+
+  // chimney pots on the crown of the Hill
+  for (const [cx, cy, cz] of [[4, 13.2, -3], [-8, 10.4, 7], [-16, 8.4, -12]] as const) {
+    k.cyl("stone", 0.55, 0.75, 3.2, 8, { x: cx, y: cy, z: cz });
+    k.cyl("stone", 0.68, 0.6, 0.4, 8, { x: cx, y: cy + 1.8, z: cz });
+  }
+
+  // the Water: mill pond, sluice and the arched stone bridge. The pond sits
+  // slightly sunk rather than on a pad — a raised disc reads as a brown plate
+  // the moment the ground beneath it is not perfectly level.
+  k.cyl("water", 9, 9, 0.4, 24, { x: 30, y: 0.15, z: 24, flat: true });
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    k.add("earth", new THREE.DodecahedronGeometry(0.9 + (i % 3) * 0.4, 0), {
+      x: 30 + Math.cos(a) * 9.2, y: 0.2, z: 24 + Math.sin(a) * 9.2, ry: a, shade: 0.94,
+    });
+  }
+  k.archBand("stone", 4.6, 1.1, 4.6, { x: 24, y: 0.4, z: 15, ry: 0.75 });
+  k.box("stone", 12.5, 0.6, 5.0, { x: 24, y: 5.4, z: 15, ry: 0.75 });
+  for (let i = 0; i < 6; i++) {
+    k.cyl("stone", 0.2, 0.24, 1.1, 6, {
+      x: 24 + Math.cos(0.75) * (i - 2.5) * 2.1 - Math.sin(0.75) * 2.3,
+      y: 6.1,
+      z: 15 + Math.sin(0.75) * (i - 2.5) * 2.1 + Math.cos(0.75) * 2.3,
+    });
+  }
+
+  // the mill: stone tower, thatch cap, sluice race (the wheel spins separately)
+  k.cyl("stone", 3.4, 4.2, 11, 14, { x: 26, y: 5.5, z: 14, ry: -0.7 });
+  k.cone("thatch", 4.8, 4.6, 14, { x: 26, y: 12.4, z: 14 });
+  k.box("window", 1.0, 1.2, 0.2, { x: 29.2, y: 7, z: 15.6, ry: -0.7, flat: true });
+  k.box("beam", 1.2, 0.5, 7.2, { x: 30.2, y: 5.6, z: 14.6, ry: -0.7 });
+
+  // garden fence and hedges
+  for (let i = 0; i < 26; i++) {
+    const a = (i / 26) * Math.PI * 2;
+    const rad = 24 + (i % 3);
+    k.box("beam", 0.24, 1.9, 0.24, { x: Math.cos(a) * rad, y: 0.95, z: Math.sin(a) * rad });
+    if (i % 2 === 0) {
+      const a2 = a + Math.PI / 26;
+      k.box("beam", 2.0, 0.14, 0.1, {
+        x: Math.cos(a2) * rad, y: 1.4, z: Math.sin(a2) * rad, ry: -a2 + Math.PI / 2,
+      });
+    }
+  }
+  // vegetable rows behind the fence
+  for (let i = 0; i < 5; i++) {
+    k.box("earth", 7.5, 0.35, 1.1, { x: 6 + i * 0.4, y: 0.18, z: 19 + i * 1.9, ry: 0.2, shade: 0.9 });
+    k.box("leaf", 7.0, 0.5, 0.7, { x: 6 + i * 0.4, y: 0.5, z: 19 + i * 1.9, ry: 0.2, shade: 0.9 + r() * 0.2 });
+  }
+
+  tree(k, { x: -24, z: 8, s: 2.3 });
+  tree(k, { x: 20, z: -14, s: 1.5 });
+  tree(k, { x: 8, z: 26, s: 1.7 });
+  tree(k, { x: -6, z: -24, s: 1.2 });
+  tree(k, { x: -30, z: -18, s: 1.4 });
 }
 
 function Hobbiton() {
-  const doors = [
-    { a: 0.1, mat: M.doorGreen, r: 15, mound: 1 },
-    { a: 1.25, mat: M.doorYellow, r: 16, mound: 1 },
-    { a: 2.35, mat: M.doorRed, r: 14.5, mound: 1 },
-    { a: 3.6, mat: M.doorBlue, r: 15.5, mound: 1 },
-    { a: 4.9, mat: M.doorYellow, r: 15, mound: 1 },
-  ];
-  const fencePosts = useMemo(
-    () => Array.from({ length: 14 }, (_, i) => ({ a: (i / 14) * Math.PI * 2, r: 24 + (i % 3) })),
-    [],
-  );
+  const built = useBuilt(buildHobbiton);
+  const wheel = useRef<THREE.Group>(null);
+  const wheelGeo = useMemo(() => {
+    const k = new Kit();
+    k.aoDepth = 0;
+    k.add("beam", new THREE.TorusGeometry(3.0, 0.34, 6, 18), { flat: true });
+    k.add("beam", new THREE.TorusGeometry(2.2, 0.22, 6, 16), { flat: true });
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      k.box("beam", 0.9, 0.7, 0.22, { x: Math.cos(a) * 2.6, y: Math.sin(a) * 2.6, z: 0, rz: a, flat: true });
+      k.box("beam", 0.2, 6.0, 0.18, { rz: a, flat: true });
+    }
+    return k.finish(mats(), UV);
+  }, []);
+  useEffect(() => () => disposeGroup(wheelGeo), [wheelGeo]);
+  useFrame((_, dt) => {
+    if (wheel.current) wheel.current.rotation.z -= dt * 0.5;
+  });
+
   return (
     <Grounded u={SITES.hobbiton.u} v={SITES.hobbiton.v}>
-      {/* twin grassy mounds — Hobbiton hill & Bagshot Row */}
-      <mesh material={M.grass} position={[0, 2.2, 0]} castShadow receiveShadow>
-        <sphereGeometry args={[18, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
-      </mesh>
-      <mesh material={M.grass} position={[-16, 1.2, -12]} castShadow receiveShadow>
-        <sphereGeometry args={[11, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
-      </mesh>
-      {/* Bagshot Row — a terrace of little doors in the second mound */}
-      {[{ a: 0.5, mat: M.doorRed }, { a: 1.5, mat: M.doorGreen }, { a: 2.5, mat: M.doorYellow }].map((d, i) => (
-        <group key={"bag" + i} position={[-16, -0.9, -12]} scale={0.62}>
-          <HobbitDoor a={d.a} r={10.5} mat={d.mat} mound={0} />
-        </group>
+      <primitive object={built} />
+      <group ref={wheel} position={[30.6, 3.4, 15.6]} rotation={[0, -0.7, 0]}>
+        <primitive object={wheelGeo} />
+      </group>
+      {[[4, 15.4, -3], [-8, 12.6, 7], [-16, 10.6, -12]].map(([cx, cy, cz], i) => (
+        <Plume key={i} position={[cx, cy, cz]} color="#c9c2b4" count={22} spread={1} height={32} size={2.4} rise={6} additive={false} opacity={0.32} />
       ))}
-      {/* the Water — mill pond with an arched stone bridge */}
-      <mesh material={M.pond} position={[30, 0.35, 24]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[12, 20]} />
-      </mesh>
-      <mesh material={M.greyStone} position={[24, 1.5, 15]} rotation={[0, 0.75, 0]} castShadow>
-        <torusGeometry args={[5.5, 0.75, 7, 18, Math.PI]} />
-      </mesh>
-      {doors.map((d, i) => (
-        <HobbitDoor key={i} {...d} />
-      ))}
-      {/* chimneys with hearth-smoke */}
-      {[
-        [4, 13.5, -3],
-        [-8, 10.5, 7],
-      ].map(([cx, cy, cz], i) => (
-        <group key={i}>
-          <mesh material={M.darkStone} position={[cx, cy, cz]} castShadow>
-            <cylinderGeometry args={[0.55, 0.7, 3, 7]} />
-          </mesh>
-          <Plume position={[cx, cy + 1.8, cz]} color="#c9c2b4" count={24} spread={1} height={34} size={2.4} rise={6} additive={false} opacity={0.35} />
-        </group>
-      ))}
-      {/* garden fence */}
-      {fencePosts.map((p, i) => (
-        <mesh key={i} material={M.wood} position={[Math.cos(p.a) * p.r, 1, Math.sin(p.a) * p.r]} castShadow>
-          <boxGeometry args={[0.28, 2, 0.28]} />
-        </mesh>
-      ))}
-      <Mill />
-      {/* the Party Tree and friends */}
-      <Tree x={-24} z={8} s={2.2} />
-      <Tree x={20} z={-14} s={1.5} />
-      <Tree x={8} z={26} s={1.7} />
-      <Tree x={-6} z={-24} s={1.2} />
+      <Lamp color="#ffd9a0" intensity={26} distance={54} position={[10, 6, 10]} decay={2} />
     </Grounded>
   );
 }
 
-// ── Elf refuges: Rivendell (waterfall) + Lothlórien (lantern mallorns) ──────
-function ElfSpire({ x = 0, z = 0, h = 22, s = 1 }: { x?: number; z?: number; h?: number; s?: number }) {
-  return (
-    <group position={[x, 0, z]} scale={s}>
-      <mesh material={M.elfStone} position={[0, h / 2, 0]} castShadow>
-        <cylinderGeometry args={[1.3, 2.1, h, 9]} />
-      </mesh>
-      <mesh material={M.whiteTrim} position={[0, h + 2.4, 0]} castShadow>
-        <coneGeometry args={[2.2, 6.2, 9]} />
-      </mesh>
-      <mesh material={M.whiteTrim} position={[0, h * 0.62, 0]} castShadow>
-        <cylinderGeometry args={[1.9, 1.9, 0.7, 9]} />
-      </mesh>
-      <mesh material={M.gold} position={[0, h - 1.6, 0]}>
-        <torusGeometry args={[1.7, 0.16, 6, 18]} />
-      </mesh>
-      {/* lit windows */}
-      {[0.3, 0.55, 0.8].map((f, i) => (
-        <mesh key={i} material={M.window} position={[0, h * f, 1.75]}>
-          <boxGeometry args={[0.5, 1, 0.1]} />
-        </mesh>
-      ))}
-    </group>
-  );
+// ── Rivendell & Lothlórien ──────────────────────────────────────────────────
+
+/** An elven hall: arcaded ground floor, deep-eaved roof, gilded ridge. */
+function elfHall(
+  k: Kit,
+  o: { x: number; z: number; y?: number; w: number; d: number; h: number; a?: number },
+) {
+  const y = o.y ?? 0;
+  const a = o.a ?? 0;
+  k.box("elf", o.w, o.h, o.d, { x: o.x, y: y + o.h / 2, z: o.z, ry: -a });
+  // arcade along the sunward face
+  const n = Math.max(3, Math.round(o.w / 2.4));
+  const ca = Math.cos(a);
+  const sa = Math.sin(a);
+  const face = o.d / 2 + 0.9;
+  k.colonnade("elf", {
+    from: [o.x + (-o.w / 2 + 1.1) * ca - face * sa, o.z + (-o.w / 2 + 1.1) * sa + face * ca],
+    to: [o.x + (o.w / 2 - 1.1) * ca - face * sa, o.z + (o.w / 2 - 1.1) * sa + face * ca],
+    count: n,
+    y,
+    h: o.h,
+    r: 0.26,
+  });
+  // eaves + steep slate roof with a gilded ridge
+  k.box("beam", o.w + 3.0, 0.5, o.d + 3.2, { x: o.x, y: y + o.h + 0.25, z: o.z, ry: -a });
+  const pitch = 0.82;
+  const rise = Math.tan(pitch) * (o.d / 2 + 1.4);
+  for (const sz of [-1, 1]) {
+    k.box("slate", o.w + 2.6, 0.3, ((o.d / 2 + 1.6) / Math.cos(pitch)) * 2.0, {
+      x: o.x - sz * ((o.d / 4 + 0.7) * sa),
+      y: y + o.h + 0.5 + rise / 2,
+      z: o.z + sz * ((o.d / 4 + 0.7) * ca),
+      ry: -a,
+      rx: sz * pitch,
+    });
+  }
+  k.box("gold", o.w + 2.4, 0.22, 0.3, { x: o.x, y: y + o.h + 0.5 + rise, z: o.z, ry: -a });
+  for (const sx of [-1, 1]) {
+    k.wedge("elf", o.d + 2.8, rise, 0.35, {
+      x: o.x + ((sx * o.w) / 2) * ca, y: y + o.h + 0.5 + rise / 2, z: o.z + ((sx * o.w) / 2) * sa,
+      ry: -a + Math.PI / 2,
+    });
+  }
+  // lit windows on the upper storey
+  for (let i = 0; i < n - 1; i++) {
+    const t = (i + 0.5) / (n - 1) - 0.5;
+    k.box("window", 0.5, 1.1, 0.12, {
+      x: o.x + t * (o.w - 2) * ca - (o.d / 2 + 0.05) * sa,
+      y: y + o.h * 0.62,
+      z: o.z + t * (o.w - 2) * sa + (o.d / 2 + 0.05) * ca,
+      ry: -a,
+      flat: true,
+    });
+  }
+}
+
+/** A slender elven spire with a conical cap. */
+function elfSpire(k: Kit, o: { x: number; z: number; h: number; s?: number }) {
+  const s = o.s ?? 1;
+  k.cyl("elf", 1.3 * s, 2.2 * s, o.h, 10, { x: o.x, y: o.h / 2, z: o.z });
+  k.cyl("elf", 2.0 * s, 2.0 * s, 0.6 * s, 10, { x: o.x, y: o.h * 0.6, z: o.z });
+  k.add("gold", new THREE.TorusGeometry(1.75 * s, 0.13 * s, 6, 18), { x: o.x, y: o.h - 1.4 * s, z: o.z, rx: Math.PI / 2 });
+  k.cone("slate", 2.3 * s, 6.4 * s, 10, { x: o.x, y: o.h + 3.0 * s, z: o.z });
+  k.cone("gold", 0.28 * s, 1.5 * s, 6, { x: o.x, y: o.h + 6.6 * s, z: o.z });
+  for (const f of [0.3, 0.55, 0.8]) {
+    k.box("window", 0.42 * s, 0.95 * s, 0.12 * s, { x: o.x, y: o.h * f, z: o.z + 1.9 * s, flat: true });
+  }
+}
+
+function buildRivendell(k: Kit) {
+  // the Last Homely House — terraced halls stepping up the valley side
+  elfHall(k, { x: 0, z: 0, w: 17, d: 10, h: 5.0 });
+  elfHall(k, { x: -3.5, z: -3, y: 6.6, w: 12, d: 7.5, h: 4.2, a: 0.1 });
+  elfHall(k, { x: -6, z: 1.5, y: 12.0, w: 8, d: 5.6, h: 3.6, a: -0.15 });
+  elfSpire(k, { x: 10, z: -6, h: 17, s: 0.8 });
+  elfSpire(k, { x: -12, z: 7, h: 13, s: 0.68 });
+  // terrace balustrade
+  for (let i = 0; i < 16; i++) {
+    const t = i / 15;
+    k.cyl("elf", 0.13, 0.16, 1.0, 6, { x: -9 + t * 20, y: 0.5, z: 8.4 });
+  }
+  k.box("elf", 20.4, 0.24, 0.5, { x: 1, y: 1.1, z: 8.4 });
+  k.box("elf", 21, 1.0, 3.0, { x: 1, y: -0.5, z: 7.2 });
+  // arched bridge over the Bruinen
+  k.archBand("elf", 8.4, 1.0, 3.6, { x: 15, y: 1.4, z: 11, ry: 0.6 });
+  k.box("elf", 18, 0.5, 3.8, { x: 15, y: 10.0, z: 11, ry: 0.6 });
+  // autumn beeches of the valley
+  tree(k, { x: -17, z: -9, s: 1.4, leaf: "autumn" });
+  tree(k, { x: 19, z: 3, s: 1.2, leaf: "autumn" });
+  tree(k, { x: 7, z: 15, s: 1.1, leaf: "autumn" });
+  tree(k, { x: -20, z: 12, s: 1.0, leaf: "autumn" });
 }
 
 function Waterfall() {
@@ -277,87 +544,68 @@ function Waterfall() {
       }),
     [],
   );
+  useEffect(() => () => mat.dispose(), [mat]);
   useFrame((_, dt) => {
     mat.uniforms.uTime.value += dt;
   });
   return (
     <group>
-      <mesh material={mat} position={[-9, 11, 9]} rotation={[0, 0.9, 0]}>
+      <mesh material={mat} position={[-10, 11, 10]} rotation={[0, 0.9, 0]}>
         <planeGeometry args={[7, 24, 1, 1]} />
       </mesh>
-      {/* mist at the plunge pool */}
-      <Plume position={[-11, 0.5, 12]} color="#eef4f4" count={26} spread={3.4} height={9} size={4} rise={3} additive={false} opacity={0.3} />
+      <Plume position={[-12, 0.5, 13]} color="#eef4f4" count={26} spread={3.4} height={9} size={4} rise={3} additive={false} opacity={0.3} />
     </group>
   );
 }
 
+function buildLorien(k: Kit) {
+  // mallorns: silver trunks, golden canopies, talan platforms among the boughs
+  const trees: [number, number, number][] = [
+    [0, 0, 4.6], [16, 9, 3.4], [-14, 12, 3.6], [4, -16, 3.0], [-9, -11, 2.6], [18, -7, 2.3], [-20, -3, 2.0],
+  ];
+  for (const [x, z, s] of trees) {
+    tree(k, { x, z, s, leaf: "goldLeaf", bark: "paleBark" });
+    if (s > 3) {
+      const flet = s * 4.4;
+      k.cyl("paleBark", s * 0.85, s * 0.85, 0.34, 12, { x, y: flet, z });
+      // railing round the flet
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        k.cyl("paleBark", 0.08, 0.1, 0.9, 5, { x: x + Math.cos(a) * s * 0.78, y: flet + 0.6, z: z + Math.sin(a) * s * 0.78 });
+      }
+      k.add("paleBark", new THREE.TorusGeometry(s * 0.78, 0.07, 5, 18), { x, y: flet + 1.05, z, rx: Math.PI / 2 });
+      // a winding stair round the trunk
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2.4;
+        k.box("paleBark", 1.5, 0.16, 0.6, {
+          x: x + Math.cos(a) * s * 0.85, y: (i / 14) * flet, z: z + Math.sin(a) * s * 0.85, ry: -a,
+        });
+      }
+    }
+    k.sphere("window", 0.34, 7, 6, { x: x + 1.5, y: s * 6.4, z: z + 1, flat: true });
+  }
+}
+
 function Rivendell() {
+  const rivendell = useBuilt(buildRivendell);
+  const lorien = useBuilt(buildLorien);
   return (
     <>
       <Grounded u={SITES.rivendell.u} v={SITES.rivendell.v}>
-        {/* the Last Homely House — terraced halls with open colonnades */}
-        {[
-          { x: 0, z: 0, w: 16, d: 10, y: 0, h: 4.5 },
-          { x: -3, z: -2, w: 11, d: 7.5, y: 4.5, h: 3.8 },
-          { x: -5, z: 1, w: 7, d: 5.5, y: 8.3, h: 3.2 },
-        ].map((t, i) => (
-          <group key={i} position={[t.x, t.y, t.z]}>
-            <mesh material={M.elfStone} position={[0, t.h / 2, 0]} castShadow>
-              <boxGeometry args={[t.w, t.h, t.d]} />
-            </mesh>
-            {/* colonnade along the south face */}
-            {Array.from({ length: Math.floor(t.w / 2.2) }, (_, k) => (
-              <mesh key={k} material={M.whiteTrim} position={[-t.w / 2 + 1.2 + k * 2.2, t.h / 2, t.d / 2 + 0.6]} castShadow>
-                <cylinderGeometry args={[0.22, 0.26, t.h, 6]} />
-              </mesh>
-            ))}
-            {/* swept eaves */}
-            <mesh material={M.wood} position={[0, t.h + 0.5, 0]} castShadow>
-              <boxGeometry args={[t.w + 2.4, 1, t.d + 2.6]} />
-            </mesh>
-            <mesh material={M.window} position={[t.w / 2 + 0.06, t.h * 0.55, 0]}>
-              <boxGeometry args={[0.1, 1.2, 2.2]} />
-            </mesh>
-          </group>
-        ))}
-        <ElfSpire x={9} z={-5} h={17} s={0.8} />
-        <ElfSpire x={-11} z={6} h={14} s={0.7} />
-        {/* arched bridge over the Bruinen */}
-        <mesh material={M.elfStone} position={[14, 2.6, 10]} rotation={[0, 0.6, 0]} castShadow>
-          <torusGeometry args={[9, 0.7, 8, 24, Math.PI]} />
-        </mesh>
-        {/* autumn beeches of the valley */}
-        <Tree x={-16} z={-8} s={1.3} mat={M.autumn} />
-        <Tree x={18} z={2} s={1.1} mat={M.autumn} />
-        <Tree x={6} z={14} s={1.0} mat={M.autumn} />
+        <primitive object={rivendell} />
         <Waterfall />
-        <Lamp color="#ffe9b0" intensity={60} distance={70} position={[0, 16, 0]} decay={2} />
+        <Lamp color="#ffe9b0" intensity={70} distance={78} position={[0, 16, 0]} decay={2} />
       </Grounded>
-      {/* Lothlórien — golden mallorn wood with flets and elf-lanterns */}
       <Grounded u={SITES.lorien.u} v={SITES.lorien.v}>
-        {[
-          [0, 0, 4.6], [16, 9, 3.4], [-14, 12, 3.6], [4, -16, 3.0], [-9, -11, 2.6], [18, -7, 2.3],
-        ].map(([x, z, s], i) => (
-          <group key={i}>
-            <Tree x={x} z={z} s={s as number} mat={M.goldLeaf} trunkMat={M.silverTrunk} />
-            {/* flet — a talan platform ringing the trunk */}
-            {(s as number) > 3 && (
-              <mesh material={M.silverTrunk} position={[x as number, (s as number) * 4.6, z as number]}>
-                <cylinderGeometry args={[(s as number) * 0.75, (s as number) * 0.75, 0.3, 9]} />
-              </mesh>
-            )}
-            <mesh material={M.window} position={[(x as number) + 1.5, (s as number) * 6.5, (z as number) + 1]}>
-              <sphereGeometry args={[0.35, 6, 5]} />
-            </mesh>
-          </group>
-        ))}
-        <Lamp color="#ffd76a" intensity={80} distance={90} position={[0, 22, 0]} decay={2} />
+        <primitive object={lorien} />
+        <Lamp color="#ffd76a" intensity={90} distance={96} position={[0, 22, 0]} decay={2} />
       </Grounded>
     </>
   );
 }
 
-// ── Erebor: the great gate under the Lonely Mountain ────────────────────────
+// ── Erebor: the Front Gate under the Lonely Mountain ────────────────────────
+
 function makeRuneTexture() {
   const cv = document.createElement("canvas");
   cv.width = 512;
@@ -368,11 +616,7 @@ function makeRuneTexture() {
   ctx.strokeStyle = "#ffb45e";
   ctx.lineWidth = 4;
   ctx.lineCap = "round";
-  let sd = 77;
-  const rand = () => {
-    sd = (sd * 1664525 + 1013904223) >>> 0;
-    return sd / 4294967296;
-  };
+  const rand = rng(77);
   for (let i = 0; i < 16; i++) {
     const x0 = 18 + i * 30;
     ctx.beginPath();
@@ -391,33 +635,129 @@ function makeRuneTexture() {
   return tex;
 }
 
-function DwarfStatue({ x, s }: { x: number; s: number }) {
-  return (
-    <group position={[x, 0, 3]} scale={s}>
-      <mesh material={M.darkStone} position={[0, 2, 0]} castShadow>
-        <boxGeometry args={[3.6, 4, 3.2]} />
-      </mesh>
-      <mesh material={M.darkStone} position={[0, 8, 0]} castShadow>
-        <boxGeometry args={[3.0, 8.4, 2.6]} />
-      </mesh>
-      <mesh material={M.darkStone} position={[0, 13.6, 0]} castShadow>
-        <boxGeometry args={[2.0, 2.4, 2.0]} />
-      </mesh>
-      {/* crossed arms holding the axe */}
-      <mesh material={M.darkStone} position={[0, 9.6, 1.5]} rotation={[0, 0, 0.5]} castShadow>
-        <boxGeometry args={[2.8, 0.9, 0.9]} />
-      </mesh>
-      <mesh material={M.greyStone} position={[0, 10.5, 2.1]} castShadow>
-        <boxGeometry args={[0.5, 6.5, 0.5]} />
-      </mesh>
-      <mesh material={M.greyStone} position={[0, 13.4, 2.1]} castShadow>
-        <boxGeometry args={[2.6, 1.5, 0.4]} />
-      </mesh>
-    </group>
-  );
+/** A colossal dwarf-king hewn from the mountain, axe grounded before him. */
+function dwarfColossus(k: Kit, o: { x: number; z: number; s: number; a?: number }) {
+  const s = o.s;
+  const a = o.a ?? 0;
+  const g = (dx: number, dy: number, dz: number, extra: Partial<{ ry: number }> = {}) => ({
+    x: o.x + dx * s * Math.cos(a) - dz * s * Math.sin(a),
+    y: dy * s,
+    z: o.z + dx * s * Math.sin(a) + dz * s * Math.cos(a),
+    ry: -a + (extra.ry ?? 0),
+  });
+  // plinth and boots
+  k.box("dwarf", 5.4 * s, 2.0 * s, 4.6 * s, g(0, 1.0, 0));
+  k.box("dwarf", 4.6 * s, 1.0 * s, 3.9 * s, g(0, 2.5, 0));
+  for (const sx of [-1, 1]) k.box("dark", 1.5 * s, 1.6 * s, 2.4 * s, g(sx * 1.05, 3.8, 0.2));
+  // legs, belted tunic, chest
+  for (const sx of [-1, 1]) k.cyl("dark", 0.85 * s, 1.0 * s, 3.6 * s, 8, g(sx * 1.0, 6.4, 0));
+  k.box("dwarf", 4.3 * s, 4.4 * s, 3.0 * s, g(0, 10.2, 0));
+  k.box("bronze", 4.5 * s, 0.7 * s, 3.2 * s, g(0, 8.4, 0));
+  k.box("dwarf", 5.0 * s, 3.6 * s, 3.2 * s, g(0, 13.6, 0));
+  // pauldrons and arms
+  for (const sx of [-1, 1]) {
+    k.sphere("bronze", 1.35 * s, 10, 8, g(sx * 2.4, 14.8, 0));
+    k.cyl("dark", 0.72 * s, 0.86 * s, 4.6 * s, 8, g(sx * 2.5, 12.2, 0.35));
+  }
+  // beard, face, helm
+  k.cone("dwarf", 1.9 * s, 3.6 * s, 8, { ...g(0, 14.6, 1.0), rx: Math.PI });
+  k.box("dwarf", 2.2 * s, 2.0 * s, 2.0 * s, g(0, 16.4, 0));
+  k.box("bronze", 2.7 * s, 1.2 * s, 2.5 * s, g(0, 17.7, 0));
+  k.cone("bronze", 1.5 * s, 1.9 * s, 8, g(0, 18.9, 0));
+  for (const sx of [-1, 1]) k.cone("bronze", 0.42 * s, 1.9 * s, 6, { ...g(sx * 1.4, 18.0, 0), rz: sx * 1.5 });
+  // the great axe, hafted and grounded
+  k.cyl("beam", 0.28 * s, 0.32 * s, 15.5 * s, 7, g(0, 7.8, 2.4));
+  k.box("silver", 0.4 * s, 2.6 * s, 3.4 * s, g(0, 14.6, 2.4));
+  k.cone("silver", 1.7 * s, 2.2 * s, 4, { ...g(0, 15.9, 3.5), rx: Math.PI / 2, rz: Math.PI / 2 });
+}
+
+function buildErebor(k: Kit) {
+  const S = 1.35;
+  // Erebor is anchored on the shoulder of a steep peak, so everything needs a
+  // foundation that runs well below the anchor — otherwise the gate hangs in
+  // the air over ground that has already fallen away toward Dale.
+  k.box("dwarf", 33 * S, 48 * S, 22 * S, { y: -24 * S + 1, z: 2 * S, shade: 0.8 });
+  k.box("rock", 46 * S, 40 * S, 14 * S, { y: -21 * S, z: -5 * S, shade: 0.85 });
+  // the mountain's shoulders framing the gate
+  k.box("rock", 16 * S, 60 * S, 12 * S, { x: -20 * S, y: 8 * S, z: -8 * S, ry: 0.2, shade: 0.92 });
+  k.box("rock", 15 * S, 56 * S, 12 * S, { x: 21 * S, y: 6 * S, z: -9 * S, ry: -0.16, shade: 0.95 });
+  // the gate front: a carved cliff face with a great arched mouth
+  k.archWall("dwarf", 34 * S, 30 * S, 7 * S, 13 * S, 20 * S, 0, { y: 15 * S });
+  k.archBand("dwarf", 6.6 * S, 1.9 * S, 8.4 * S, { y: 13.4 * S, z: 0.4 * S });
+  // stepped battlement crown, each course narrower
+  k.box("dwarf", 30 * S, 3.0 * S, 8.2 * S, { y: 31.4 * S });
+  k.box("dwarf", 24 * S, 2.6 * S, 7.4 * S, { y: 34.4 * S });
+  k.box("dwarf", 17 * S, 2.2 * S, 6.6 * S, { y: 37.0 * S });
+  k.merlonLine("dwarf", { from: [-14 * S, 3.6 * S], to: [14 * S, 3.6 * S], y: 32.9 * S, count: 13, w: 1.5 * S, h: 1.8 * S, d: 1.2 * S });
+  // fluted pilasters flanking the mouth
+  for (const sx of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      k.cyl("dwarf", 1.05 * S, 1.25 * S, 26 * S, 8, { x: sx * (9.4 + i * 2.3) * S, y: 13 * S, z: 3.4 * S });
+      k.box("bronze", 2.8 * S, 0.7 * S, 2.8 * S, { x: sx * (9.4 + i * 2.3) * S, y: 26.4 * S, z: 3.4 * S });
+    }
+  }
+  // the doors themselves, seamed with forge-light
+  k.box("dark", 11.4 * S, 17.4 * S, 2.2 * S, { y: 8.7 * S, z: 1.2 * S });
+  for (const sx of [-1, 1]) {
+    for (let i = 0; i < 4; i++) {
+      k.box("bronze", 0.5 * S, 16.0 * S, 0.4 * S, { x: sx * (1.6 + i * 1.5) * S, y: 8.7 * S, z: 2.4 * S });
+    }
+  }
+  k.box("forge", 1.1 * S, 16.4 * S, 0.5 * S, { y: 8.7 * S, z: 2.5 * S, flat: true });
+  // causeway with balustrade and brazier plinths — carried on a deep viaduct
+  // wall so it lands on the slope instead of ending in mid-air
+  k.box("dwarf", 11 * S, 1.6 * S, 22 * S, { y: 0.8 * S, z: 13 * S });
+  k.box("dwarf", 7.5 * S, 40 * S, 17 * S, { y: -20 * S, z: 12 * S, shade: 0.82 });
+  k.box("dwarf", 9.5 * S, 6 * S, 19 * S, { y: -3 * S, z: 12.5 * S, shade: 0.88 });
+  for (const sx of [-1, 1]) {
+    k.box("dwarf", 0.9 * S, 1.5 * S, 22 * S, { x: sx * 5.4 * S, y: 2.3 * S, z: 13 * S });
+    for (let i = 0; i < 6; i++) {
+      k.box("dwarf", 1.5 * S, 0.5 * S, 1.5 * S, { x: sx * 5.4 * S, y: 3.3 * S, z: (4 + i * 4.0) * S });
+    }
+    k.cyl("dark", 0.9 * S, 1.3 * S, 4.8 * S, 8, { x: sx * 6.6 * S, y: 2.4 * S, z: 10 * S });
+    k.cyl("bronze", 1.5 * S, 1.0 * S, 1.3 * S, 10, { x: sx * 6.6 * S, y: 5.4 * S, z: 10 * S });
+  }
+  // the guardians stand clear of the gate face, out on the causeway shoulders,
+  // or they merge into the cliff behind them and read as pilasters
+  dwarfColossus(k, { x: -21 * S, z: 13 * S, s: 1.45 * S, a: 0.3 });
+  dwarfColossus(k, { x: 21 * S, z: 13 * S, s: 1.45 * S, a: -0.3 });
+}
+
+function buildDale(k: Kit) {
+  const r = rng(1919);
+  // broken towers and roofless halls in the mountain's shadow
+  const towers: [number, number, number, number][] = [
+    [0, 0, 8.5, 2.4], [9, 4, 5.4, 1.9], [-7, 6, 6.4, 2.1], [4, -9, 4.2, 1.7], [-12, -4, 3.4, 1.5],
+  ];
+  for (const [x, z, h, rad] of towers) {
+    const lean = (r() - 0.5) * 0.14;
+    k.cyl("ruin", rad * 0.84, rad, h, 10, { x, y: h / 2, z, rz: lean }, true);
+    // a jagged crown of broken courses
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      if (r() < 0.3) continue;
+      k.box("ruin", 0.7, 0.5 + r() * 1.4, 1.2, {
+        x: x + Math.cos(a) * rad * 0.9, y: h + 0.4, z: z + Math.sin(a) * rad * 0.9, ry: -a, rz: lean,
+      });
+    }
+    if (r() > 0.4) k.archWall("ruin", rad * 1.9, h * 0.6, 0.7, rad * 0.8, h * 0.4, 0, { x, y: h * 0.3, z: z + rad * 0.9 });
+  }
+  for (const [wx, wz, wr] of [[-4, -5, 0.5], [4, -3, -0.3], [12, 0, 0.8], [-11, 2, -0.6], [7, 9, 0.25]] as const) {
+    k.box("ruin", 6.5, 1.7 + r() * 1.4, 1.0, { x: wx, y: 0.9, z: wz, ry: wr });
+    k.box("ruin", 1.4, 0.9, 1.2, { x: wx + Math.cos(wr) * 3.6, y: 0.45, z: wz + Math.sin(wr) * 3.6, ry: r() * 3 });
+  }
+  for (let i = 0; i < 9; i++) {
+    const a = r() * Math.PI * 2;
+    const d = 8 + r() * 14;
+    k.add("ruin", new THREE.DodecahedronGeometry(0.5 + r() * 1.1, 0), {
+      x: Math.cos(a) * d, y: 0.5, z: Math.sin(a) * d, rx: r() * 3, ry: r() * 3,
+    });
+  }
 }
 
 function Erebor() {
+  const gate = useBuilt(buildErebor);
+  const dale = useBuilt(buildDale);
   const runeTex = useMemo(makeRuneTexture, []);
   const runeMat = useMemo(
     () =>
@@ -430,183 +770,245 @@ function Erebor() {
       }),
     [runeTex],
   );
+  useEffect(() => () => { runeMat.dispose(); runeTex.dispose(); }, [runeMat, runeTex]);
+
   return (
     <>
       <Grounded u={SITES.erebor.u} v={SITES.erebor.v}>
-       <group scale={1.35}>
-        {/* stepped gate */}
-        <mesh material={M.darkStone} position={[-7.5, 10, 0]} castShadow>
-          <boxGeometry args={[4.5, 20, 5.5]} />
-        </mesh>
-        <mesh material={M.darkStone} position={[7.5, 10, 0]} castShadow>
-          <boxGeometry args={[4.5, 20, 5.5]} />
-        </mesh>
-        <mesh material={M.darkStone} position={[0, 21.4, 0]} castShadow>
-          <boxGeometry args={[21, 4.2, 6]} />
-        </mesh>
-        <mesh material={M.darkStone} position={[0, 25, 0]} castShadow>
-          <boxGeometry args={[15, 3.4, 5]} />
-        </mesh>
-        {/* rune lintel */}
-        <mesh material={runeMat} position={[0, 21.4, 3.06]}>
-          <planeGeometry args={[19, 3.4]} />
-        </mesh>
-        {/* the doors with the glowing forge seam */}
-        <mesh material={M.greyStone} position={[0, 8.2, 0.6]} castShadow>
-          <boxGeometry args={[10.6, 16.4, 3.6]} />
-        </mesh>
-        <mesh material={M.forge} position={[0, 8.2, 2.5]}>
-          <boxGeometry args={[1.2, 15.6, 0.6]} />
-        </mesh>
-        {/* causeway + braziers */}
-        <mesh material={M.greyStone} position={[0, 0.7, 15]} receiveShadow>
-          <boxGeometry args={[9, 1.4, 26]} />
+        <primitive object={gate} />
+        <mesh material={runeMat} position={[0, 33.5, 4.8]}>
+          <planeGeometry args={[24, 3.4]} />
         </mesh>
         {[-1, 1].map((s2) => (
-          <group key={s2} position={[s2 * 6.2, 0, 10]}>
-            <mesh material={M.darkStone} position={[0, 2.2, 0]} castShadow>
-              <cylinderGeometry args={[0.8, 1.1, 4.4, 7]} />
-            </mesh>
-            <Plume position={[0, 4.6, 0]} color="#ffa63e" count={30} spread={0.9} height={9} size={2.6} rise={9} opacity={0.8} />
-          </group>
+          <Plume key={s2} position={[s2 * 8.9, 7.9, 13.5]} color="#ffa63e" count={30} spread={0.9} height={9} size={2.6} rise={9} opacity={0.8} />
         ))}
-        <DwarfStatue x={-15.5} s={1.15} />
-        <DwarfStatue x={15.5} s={1.15} />
-        <Lamp color="#ff8a2e" intensity={140} distance={70} position={[0, 8, 8]} decay={1.8} />
-       </group>
+        <Lamp color="#ff8a2e" intensity={160} distance={80} position={[0, 11, 10]} decay={1.8} />
       </Grounded>
-      {/* smoke from the mountain's chimneys */}
       <Grounded u={0.670} v={0.200}>
         <Plume position={[0, 0, 0]} color="#8a8178" count={70} spread={6} height={110} size={4.4} rise={11} additive={false} opacity={0.4} />
       </Grounded>
-      {/* the ruins of Dale in the mountain's shadow */}
       <Grounded u={0.6625} v={0.2505}>
-        {[
-          { x: 0, z: 0, h: 7, r: 2.2, broken: 0.6 },
-          { x: 9, z: 4, h: 4.5, r: 1.7, broken: 0.35 },
-          { x: -7, z: 6, h: 5.5, r: 1.9, broken: 0.5 },
-        ].map((t, i) => (
-          <group key={i} position={[t.x, 0, t.z]}>
-            <mesh material={M.ruinStone} position={[0, t.h / 2, 0]} rotation={[0, i, t.broken * 0.16]} castShadow>
-              <cylinderGeometry args={[t.r * 0.82, t.r, t.h, 9, 1, true]} />
-            </mesh>
-            <mesh material={M.ruinStone} position={[t.r + 0.8, 0.5, 1]} rotation={[0.3, i * 2, 0.5]} castShadow>
-              <boxGeometry args={[1.6, 1, 1.2]} />
-            </mesh>
-          </group>
-        ))}
-        {/* tumbled walls */}
-        {[
-          [-4, -5, 0.5], [4, -3, -0.3], [12, 0, 0.8], [-11, 2, -0.6],
-        ].map(([wx, wz, wr], i) => (
-          <mesh key={"w" + i} material={M.ruinStone} position={[wx, 0.8, wz]} rotation={[0, wr, 0]} castShadow>
-            <boxGeometry args={[5.5, 1.6, 0.9]} />
-          </mesh>
-        ))}
+        <primitive object={dale} />
       </Grounded>
     </>
   );
 }
 
-// ── Minas Tirith: seven white tiers with parapets & turrets ──────────────────
-function MinasTirith() {
-  const tiers = [21, 18, 15.4, 12.9, 10.5, 8.2, 6.1];
-  const turrets = useMemo(() => {
-    const list: { x: number; z: number; y: number; s: number }[] = [];
-    let sd = 31;
-    const rand = () => {
-      sd = (sd * 1664525 + 1013904223) >>> 0;
-      return sd / 4294967296;
-    };
-    tiers.forEach((r, i) => {
-      const n = i % 2 === 0 ? 3 : 2;
-      for (let k = 0; k < n; k++) {
-        const a = rand() * Math.PI * 2;
-        list.push({ x: Math.cos(a) * (r - 1.2), z: Math.sin(a) * (r - 1.2), y: i * 4.6 + 4.6, s: 0.8 + rand() * 0.7 });
-      }
+// ── Minas Tirith: seven circles of white stone ──────────────────────────────
+
+const MT_TIERS = [26, 22.4, 19.0, 15.8, 12.8, 10.0, 7.4];
+const MT_RISE = 5.2;
+
+function buildMinasTirith(k: Kit) {
+  const r = rng(3107);
+  // The hill the city is built on. It has to run deep — a shallow flared drum
+  // shows its underside as a dark saucer the moment the ground falls away —
+  // and it has to be coarsely faceted with crags at its foot, or the exposed
+  // part reads as a concrete dam rather than the spur of Mindolluin.
+  k.cyl("rock", 26.6, 38, 54, 11, { y: -26, shade: 0.92 });
+  for (let i = 0; i < 22; i++) {
+    const a = (i / 22) * Math.PI * 2 + r() * 0.3;
+    const s = 3.5 + r() * 7;
+    const drop = r() * 22;
+    k.add("rock", new THREE.DodecahedronGeometry(s, 0), {
+      x: Math.cos(a) * (28 + r() * 6),
+      y: -2 - drop,
+      z: Math.sin(a) * (28 + r() * 6),
+      rx: r() * 3, ry: r() * 3, rz: r() * 3,
+      shade: 0.82 + r() * 0.42,
     });
-    return list;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
+
+  MT_TIERS.forEach((rad, i) => {
+    const y = i * MT_RISE;
+    const gate = i * 2.4 + 0.35; // gates alternate round the circuit
+    // wall drum with a battered base
+    k.cyl("white", rad, rad + 0.85, MT_RISE, 44, { y: y + MT_RISE / 2 });
+    k.cyl("white", rad + 1.0, rad + 1.5, 0.9, 44, { y: y + 0.45, shade: 0.94 });
+    // string course + crenellated parapet
+    k.add("white", new THREE.TorusGeometry(rad + 0.3, 0.3, 6, 40), { y: y + MT_RISE, rx: Math.PI / 2 });
+    k.merlonRing("white", {
+      r: rad - 0.2, y: y + MT_RISE, count: Math.round(rad * 2.4), w: 1.0, h: 1.15, d: 0.85,
+      gapAt: gate, gapArc: 0.26,
+    });
+    // buttresses
+    for (let b = 0; b < 8; b++) {
+      const a = (b / 8) * Math.PI * 2 + i * 0.3;
+      if (Math.abs(Math.atan2(Math.sin(a - gate), Math.cos(a - gate))) < 0.3) continue;
+      k.box("white", 1.1, MT_RISE * 0.92, 1.6, {
+        x: Math.cos(a) * (rad + 0.6), y: y + MT_RISE * 0.46, z: Math.sin(a) * (rad + 0.6), ry: -a,
+        shade: 0.96,
+      });
+    }
+    // the tier's gate, with a tower to either side
+    k.archWall("white", 5.4, MT_RISE + 1.2, 2.2, 2.4, 3.4, 0, {
+      x: Math.cos(gate) * rad, y: y + (MT_RISE + 1.2) / 2, z: Math.sin(gate) * rad, ry: -gate + Math.PI / 2,
+    });
+    for (const sg of [-1, 1]) {
+      const ga = gate + (sg * 3.4) / rad;
+      k.cyl("white", 1.5, 1.75, MT_RISE + 3.0, 10, {
+        x: Math.cos(ga) * rad, y: y + (MT_RISE + 3.0) / 2, z: Math.sin(ga) * rad,
+      });
+      k.cone("slate", 1.9, 2.6, 10, { x: Math.cos(ga) * rad, y: y + MT_RISE + 4.3, z: Math.sin(ga) * rad });
+    }
+    // the city itself: houses crowding the terrace behind each wall
+    const inner = MT_TIERS[i + 1] ?? 5.5;
+    const houses = Math.max(4, Math.round(rad * 0.7));
+    for (let h = 0; h < houses; h++) {
+      const a = (h / houses) * Math.PI * 2 + i * 0.7 + 0.2;
+      if (Math.abs(Math.atan2(Math.sin(a - gate), Math.cos(a - gate))) < 0.35) continue;
+      const hr = (rad + inner) / 2 + (r() - 0.5) * (rad - inner) * 0.35;
+      const scale = 0.55 + r() * 0.3;
+      cottage(k, {
+        x: Math.cos(a) * hr,
+        z: Math.sin(a) * hr,
+        a: -a + Math.PI / 2,
+        s: scale,
+        w: 4.6, d: 3.4, h: 3.2,
+        wall: "white",
+        roof: "slate",
+      });
+      // the terrace floor under them
+      if (h % 3 === 0) {
+        k.box("white", 5.5, 0.4, 4.0, {
+          x: Math.cos(a) * hr, y: y + MT_RISE - 0.2, z: Math.sin(a) * hr, ry: -a, shade: 0.98,
+        });
+      }
+    }
+    // banners on the odd tiers
+    if (i % 2 === 1) {
+      const ba = gate + 1.1;
+      k.cyl("silver", 0.09, 0.12, 4.2, 5, { x: Math.cos(ba) * (rad - 0.5), y: y + MT_RISE + 2.1, z: Math.sin(ba) * (rad - 0.5) });
+      k.plane("cloth", 1.5, 2.4, {
+        x: Math.cos(ba) * (rad - 0.5) + 0.75, y: y + MT_RISE + 2.6, z: Math.sin(ba) * (rad - 0.5), flat: true,
+      });
+    }
+  });
+
+  // the spur of rock that splits the city, and the Great Gate at its foot
+  k.box("rock", 4.6, 28, 30, { x: 10, y: 14, z: 0, rz: -0.09, shade: 0.88 });
+  // a prow of bare rock thrusting east, apex laid over toward +X
+  k.wedge("rock", 13, 26, 9.0, { x: 20, y: 8, z: 0, rz: -Math.PI / 2, shade: 0.86 });
+  k.archWall("white", 13, 13, 4.5, 5.0, 8.0, 0, { x: 26.2, y: 6.5, z: 0, ry: Math.PI / 2 });
+  for (const sz of [-1, 1]) {
+    k.cyl("white", 2.4, 3.0, 15, 12, { x: 25.6, y: 7.5, z: sz * 7.6 });
+    k.merlonRing("white", { cx: 25.6, cz: sz * 7.6, r: 2.4, y: 15, count: 9, w: 0.9, h: 1.0, d: 0.7 });
+    k.cone("slate", 3.1, 4.0, 12, { x: 25.6, y: 17.6, z: sz * 7.6 });
+  }
+  // the causeway climbing to the gate
+  k.box("white", 9, 1.2, 16, { x: 33, y: 0.6, z: 0, shade: 1.02 });
+
+  // ── the Citadel ──
+  const topY = MT_TIERS.length * MT_RISE;
+  k.cyl("white", 7.2, 7.6, 1.2, 28, { y: topY + 0.6, shade: 1.04 });
+  // court of the fountain and the White Tree
+  k.cyl("white", 2.2, 2.6, 0.9, 16, { x: 3.6, y: topY + 1.6, z: 0.4 });
+  k.cyl("water", 1.8, 1.8, 0.5, 16, { x: 3.6, y: topY + 2.0, z: 0.4, flat: true });
+  k.cyl("paleBark", 0.22, 0.5, 3.4, 7, { x: 3.6, y: topY + 3.6, z: 0.4 });
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    k.cyl("paleBark", 0.08, 0.16, 1.9, 5, {
+      x: 3.6 + Math.cos(a) * 0.5, y: topY + 5.2, z: 0.4 + Math.sin(a) * 0.5, rx: Math.sin(a) * 0.6, rz: -Math.cos(a) * 0.6,
+    });
+  }
+  k.sphere("paleLeaf", 1.6, 10, 8, { x: 3.6, y: topY + 6.2, z: 0.4, s: [1, 0.8, 1] });
+  k.sphere("paleLeaf", 1.0, 8, 6, { x: 4.6, y: topY + 5.6, z: 1.0 });
+  k.sphere("paleLeaf", 0.9, 8, 6, { x: 2.7, y: topY + 5.5, z: -0.7 });
+  // guard colonnade around the court
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    k.cyl("white", 0.3, 0.36, 3.6, 8, { x: Math.cos(a) * 6.4, y: topY + 3.0, z: Math.sin(a) * 6.4 });
+  }
+
+  // the Tower of Ecthelion
+  const tY = topY + 1.2;
+  k.cyl("white", 2.9, 3.6, 3.0, 16, { y: tY + 1.5 });
+  k.cyl("white", 2.15, 2.6, 15, 16, { y: tY + 10.5 });
+  // flutes up the shaft
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    k.box("white", 0.34, 15, 0.34, { x: Math.cos(a) * 2.4, y: tY + 10.5, z: Math.sin(a) * 2.4, ry: -a, shade: 1.03 });
+  }
+  k.cyl("white", 3.0, 2.6, 1.2, 16, { y: tY + 18.4 });
+  k.merlonRing("white", { r: 2.7, y: tY + 19.0, count: 12, w: 0.65, h: 0.8, d: 0.6 });
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4;
+    k.cyl("white", 0.5, 0.62, 4.2, 8, { x: Math.cos(a) * 2.5, y: tY + 21.0, z: Math.sin(a) * 2.5 });
+    k.cone("silver", 0.7, 1.6, 8, { x: Math.cos(a) * 2.5, y: tY + 23.9, z: Math.sin(a) * 2.5 });
+  }
+  k.cyl("white", 1.5, 2.4, 4.2, 16, { y: tY + 21.5 });
+  k.cone("silver", 2.0, 6.0, 16, { y: tY + 26.6 });
+  k.cone("silver", 0.22, 2.2, 6, { y: tY + 30.5 });
+  for (let i = 0; i < 3; i++) {
+    k.box("window", 0.5, 1.3, 0.12, { y: tY + 6 + i * 4.2, z: 2.62, flat: true });
+  }
+}
+
+function MinasTirith() {
+  const built = useBuilt(buildMinasTirith);
+  const topY = MT_TIERS.length * MT_RISE;
   return (
     <Grounded u={SITES.minastirith.u} v={SITES.minastirith.v}>
-      {/* banners of the White Tree on the tiers */}
-      {[1, 3, 5].map((i) => (
-        <group key={"bn" + i} position={[Math.cos(i * 1.8) * (tiers[i] - 0.6), i * 4.6 + 6.2, Math.sin(i * 1.8) * (tiers[i] - 0.6)]}>
-          <mesh material={M.silverTrunk}>
-            <cylinderGeometry args={[0.09, 0.12, 3.6, 5]} />
-          </mesh>
-          <mesh material={M.banner} position={[0, 1.0, 0.62]}>
-            <planeGeometry args={[0.35, 1.5]} />
-          </mesh>
-        </group>
-      ))}
-      {/* foundation skirt into the hillside */}
-      <mesh material={M.whiteStone} position={[0, -5, 0]}>
-        <cylinderGeometry args={[21.8, 25, 14, 26]} />
-      </mesh>
-      {tiers.map((r, i) => (
-        <group key={i}>
-          <mesh material={M.whiteStone} position={[0, i * 4.6 + 2.4, 0]} castShadow receiveShadow>
-            <cylinderGeometry args={[r, r + 0.8, 4.8, 26]} />
-          </mesh>
-          {/* parapet */}
-          <mesh material={M.whiteTrim} position={[0, i * 4.6 + 5.0, 0]}>
-            <torusGeometry args={[r + 0.35, 0.35, 6, 30]} />
-          </mesh>
-          {/* gate notch, alternating sides */}
-          <mesh material={M.darkStone} position={[Math.cos(i * 2.4) * r, i * 4.6 + 1.8, Math.sin(i * 2.4) * r]}>
-            <boxGeometry args={[2.4, 3.6, 2.4]} />
-          </mesh>
-        </group>
-      ))}
-      {turrets.map((t, i) => (
-        <group key={i} position={[t.x, t.y, t.z]} scale={t.s}>
-          <mesh material={M.whiteTrim} castShadow>
-            <cylinderGeometry args={[0.9, 1.1, 4.4, 8]} />
-          </mesh>
-          <mesh material={M.whiteStone} position={[0, 3.2, 0]} castShadow>
-            <coneGeometry args={[1.15, 2.2, 8]} />
-          </mesh>
-        </group>
-      ))}
-      {/* the prow */}
-      <mesh material={M.whiteStone} position={[10, 18, 0]} rotation={[0, 0, -0.14]} castShadow>
-        <boxGeometry args={[15, 26, 3.4]} />
-      </mesh>
-      {/* citadel plaza with the White Tree */}
-      <group position={[0, 32.6, 0]}>
-        <mesh material={M.silverTrunk} position={[3.4, 1.4, 0]} castShadow>
-          <cylinderGeometry args={[0.22, 0.4, 2.8, 6]} />
-        </mesh>
-        <mesh material={M.paleLeaf} position={[3.4, 3.4, 0]} castShadow>
-          <sphereGeometry args={[1.5, 8, 6]} />
-        </mesh>
-      </group>
-      {/* Tower of Ecthelion with corner turrets */}
-      <mesh material={M.whiteTrim} position={[0, 39, 0]} castShadow>
-        <cylinderGeometry args={[2.0, 2.9, 13, 12]} />
-      </mesh>
-      {[0, 1, 2, 3].map((k) => (
-        <mesh
-          key={k}
-          material={M.whiteTrim}
-          position={[Math.cos((k * Math.PI) / 2) * 2.5, 45, Math.sin((k * Math.PI) / 2) * 2.5]}
-          castShadow
-        >
-          <cylinderGeometry args={[0.4, 0.5, 3.4, 6]} />
-        </mesh>
-      ))}
-      <mesh material={M.whiteTrim} position={[0, 48.2, 0]} castShadow>
-        <coneGeometry args={[2.5, 5.4, 12]} />
-      </mesh>
-      <Lamp color="#fff2d8" intensity={90} distance={100} position={[0, 36, 12]} decay={2} />
+      <primitive object={built} />
+      <Lamp color="#fff2d8" intensity={110} distance={120} position={[0, topY + 8, 10]} decay={2} />
+      <Lamp color="#ffd8a0" intensity={40} distance={60} position={[28, 6, 0]} decay={2} />
     </Grounded>
   );
 }
 
-// ── Mordor: Barad-dûr and Mount Doom's living lava ───────────────────────────
+// ── Mordor: Barad-dûr and the fires of Orodruin ─────────────────────────────
+
+function buildBaradDur(k: Kit) {
+  // a tapering stack of drums, each ringed with iron galleries
+  const drums = [
+    { y: 0, h: 22, rb: 8.4, rt: 7.4 },
+    { y: 22, h: 20, rb: 7.0, rt: 6.0 },
+    { y: 42, h: 18, rb: 5.6, rt: 4.7 },
+    { y: 60, h: 16, rb: 4.4, rt: 3.6 },
+    { y: 76, h: 13, rb: 3.4, rt: 2.9 },
+  ];
+  for (const d of drums) {
+    k.cyl("black", d.rt, d.rb, d.h, 8, { y: d.y + d.h / 2 });
+    k.cyl("obsidian", d.rb + 0.7, d.rb + 0.9, 1.0, 8, { y: d.y + 0.5 });
+    // gallery ring with a rail of spikes
+    k.cyl("obsidian", d.rt + 1.1, d.rt + 1.1, 0.5, 8, { y: d.y + d.h - 0.6 });
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      k.cone("obsidian", 0.16, 1.5, 4, {
+        x: Math.cos(a) * (d.rt + 0.95), y: d.y + d.h + 0.2, z: Math.sin(a) * (d.rt + 0.95),
+      });
+    }
+  }
+  // buttress fins climbing the lower tower
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.5;
+    k.cone("obsidian", 1.9, 34, 4, {
+      x: Math.cos(a) * 8.2, y: 17, z: Math.sin(a) * 8.2, ry: -a, rz: 0.16,
+    });
+    k.cone("obsidian", 1.2, 22, 4, {
+      x: Math.cos(a + 0.35) * 6.4, y: 44, z: Math.sin(a + 0.35) * 6.4, ry: -a, rz: 0.12,
+    });
+  }
+  // lava seams bleeding through the base
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + 0.4;
+    k.box("lava", 0.45, 9 + i, 0.45, {
+      x: Math.cos(a) * 7.9, y: 5 + i * 1.6, z: Math.sin(a) * 7.9, ry: -a, rz: 0.28, flat: true,
+    });
+  }
+  // the crown: a ring of horns around the Eye's socket
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    k.cone("obsidian", 0.7, 11, 4, { x: Math.cos(a) * 3.0, y: 93, z: Math.sin(a) * 3.0, ry: a, rz: -0.24 });
+  }
+  for (const sx of [-1, 1]) {
+    k.cone("black", 1.6, 20, 5, { x: sx * 3.4, y: 99, z: 0, rz: -sx * 0.22 });
+  }
+  k.cyl("obsidian", 3.0, 3.6, 4.0, 8, { y: 91 });
+}
+
 function BaradDur() {
+  const built = useBuilt(buildBaradDur);
   const eyeRef = useRef<THREE.Group>(null);
   const beamRef = useRef<THREE.Mesh>(null);
   const eyeTex = useMemo(() => {
@@ -628,6 +1030,7 @@ function BaradDur() {
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }, []);
+  useEffect(() => () => eyeTex.dispose(), [eyeTex]);
 
   useFrame(({ clock }) => {
     if (eyeRef.current) eyeRef.current.rotation.y = clock.elapsedTime * 0.35;
@@ -639,65 +1042,17 @@ function BaradDur() {
 
   return (
     <Grounded u={SITES.baraddur.u} v={SITES.baraddur.v}>
-      {/* tapering black tower with buttress fins */}
-      {[0, 1, 2, 3, 4].map((i) => (
-        <mesh key={i} material={M.blackTower} position={[0, 10 + i * 17, 0]} castShadow>
-          <cylinderGeometry args={[5.2 - i * 0.85, 6.6 - i * 0.85, 18, 6]} />
-        </mesh>
-      ))}
-      {[0, 1, 2, 3].map((k) => (
-        <mesh
-          key={k}
-          material={M.obsidian}
-          position={[Math.cos((k * Math.PI) / 2 + 0.5) * 6.5, 14, Math.sin((k * Math.PI) / 2 + 0.5) * 6.5]}
-          rotation={[0, -((k * Math.PI) / 2 + 0.5), 0.22]}
-          castShadow
-        >
-          <coneGeometry args={[1.6, 26, 4]} />
-        </mesh>
-      ))}
-      {/* lava seams at the base */}
-      {[0, 1, 2].map((k) => (
-        <mesh key={k} material={M.lava} position={[Math.cos(k * 2.1) * 5.8, 4 + k * 2, Math.sin(k * 2.1) * 5.8]} rotation={[0, k, 0.3]}>
-          <boxGeometry args={[0.5, 8, 0.5]} />
-        </mesh>
-      ))}
-      {/* spiked crown */}
-      {[0, 1, 2, 3, 4, 5].map((k) => (
-        <mesh
-          key={k}
-          material={M.obsidian}
-          position={[Math.cos((k * Math.PI) / 3) * 2.6, 89, Math.sin((k * Math.PI) / 3) * 2.6]}
-          rotation={[Math.cos((k * Math.PI) / 3) * 0.25, 0, -Math.sin((k * Math.PI) / 3) * 0.25]}
-          castShadow
-        >
-          <coneGeometry args={[0.7, 9, 4]} />
-        </mesh>
-      ))}
-      {/* twin horns */}
-      {[-1, 1].map((s2) => (
-        <mesh key={s2} material={M.blackTower} position={[s2 * 3.2, 96, 0]} rotation={[0, 0, -s2 * 0.22]} castShadow>
-          <coneGeometry args={[1.5, 17, 5]} />
-        </mesh>
-      ))}
-      {/* the Eye */}
-      <group ref={eyeRef} position={[0, 91, 0]}>
+      <primitive object={built} />
+      <group ref={eyeRef} position={[0, 94, 0]}>
         <sprite scale={[19, 19, 1]}>
           <spriteMaterial map={eyeTex} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
         </sprite>
         <mesh ref={beamRef} position={[0, -8, 70]} rotation={[Math.PI / 2.3, 0, 0]}>
           <coneGeometry args={[24, 170, 12, 1, true]} />
-          <meshBasicMaterial
-            color="#ff7a22"
-            transparent
-            opacity={0.18}
-            side={THREE.DoubleSide}
-            blending={THREE.AdditiveBlending}
-            depthWrite={false}
-          />
+          <meshBasicMaterial color="#ff7a22" transparent opacity={0.18} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
       </group>
-      <Lamp color="#ff5a1e" intensity={420} distance={210} position={[0, 91, 0]} decay={1.9} />
+      <Lamp color="#ff5a1e" intensity={460} distance={230} position={[0, 94, 0]} decay={1.9} />
     </Grounded>
   );
 }
@@ -706,16 +1061,23 @@ function MountDoom() {
   const cx = toWorldX(SITES.mountdoom.u);
   const cz = toWorldZ(SITES.mountdoom.v);
   const lavaGroup = useRef<THREE.Group>(null);
+  const lavaMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: "#1c0a06",
+        emissive: "#ff5a16",
+        emissiveIntensity: 2.2,
+        roughness: 0.9,
+        side: THREE.DoubleSide,
+      }),
+    [],
+  );
 
   // lava rivulets draped over the real terrain shape (world coords, y scaled by morph)
   const lavaGeo = useMemo(() => {
     const positions: number[] = [];
     const indices: number[] = [];
-    let sd = 5150;
-    const rand = () => {
-      sd = (sd * 1664525 + 1013904223) >>> 0;
-      return sd / 4294967296;
-    };
+    const rand = rng(5150);
     const dirs = [0.4, 1.7, 3.1, 4.4, 5.5];
     for (const baseA of dirs) {
       const start = positions.length / 3;
@@ -744,24 +1106,24 @@ function MountDoom() {
     return g;
   }, [cx, cz]);
 
+  useEffect(() => () => { lavaGeo.dispose(); lavaMat.dispose(); }, [lavaGeo, lavaMat]);
+
   useFrame(({ clock }) => {
     if (lavaGroup.current) {
       lavaGroup.current.scale.y = Math.max(morph.value, 0.001);
       lavaGroup.current.visible = morph.value > 0.05;
     }
-    M.lavaFlow.emissiveIntensity = 2.0 + Math.sin(clock.elapsedTime * 1.7) * 0.5;
-    M.lava.emissiveIntensity = 2.4 + Math.sin(clock.elapsedTime * 2.3) * 0.6;
+    lavaMat.emissiveIntensity = 2.0 + Math.sin(clock.elapsedTime * 1.7) * 0.5;
   });
 
   return (
     <>
       <group ref={lavaGroup}>
-        <mesh geometry={lavaGeo} material={M.lavaFlow} />
+        <mesh geometry={lavaGeo} material={lavaMat} />
       </group>
       <Grounded u={SITES.mountdoom.u} v={SITES.mountdoom.v}>
-        {/* crater glow (Grounded anchors at the crater floor) */}
-        <mesh material={M.lava} position={[0, 1.8, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[9, 18]} />
+        <mesh material={lavaMat} position={[0, 1.8, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[9, 20]} />
         </mesh>
         <Plume position={[0, 3, 0]} color="#ff6a1a" count={130} spread={6.5} height={120} size={4} rise={18} opacity={0.7} />
         <Plume position={[0, 6, 0]} color="#40342c" count={80} spread={10} height={180} size={7} rise={10} additive={false} opacity={0.4} />
@@ -771,231 +1133,350 @@ function MountDoom() {
   );
 }
 
-// ── Rohan: Edoras, the Golden Hall on its hill ───────────────────────────────
-function RohanHouse({ x, z, a, s = 1 }: { x: number; z: number; a: number; s?: number }) {
-  return (
-    <group position={[x, 0, z]} rotation={[0, a, 0]} scale={s}>
-      <mesh material={M.wood} position={[0, 1.2, 0]} castShadow>
-        <boxGeometry args={[4.2, 2.4, 3.0]} />
-      </mesh>
-      <mesh material={M.thatch} position={[0, 3.1, 0]} rotation={[0, 0, 0]} castShadow>
-        <coneGeometry args={[2.9, 2.2, 4]} />
-      </mesh>
-      <mesh material={M.window} position={[2.15, 1.2, 0]}>
-        <boxGeometry args={[0.08, 0.8, 0.8]} />
-      </mesh>
-    </group>
-  );
+// ── Rohan: Edoras and the Golden Hall ───────────────────────────────────────
+
+function buildEdoras(k: Kit) {
+  const r = rng(6161);
+  // the hill's crown, terraced
+  k.cyl("turf", 23, 26, 3.0, 30, { y: -1.0, shade: 0.95 });
+
+  // Meduseld on its plinth
+  const hall = { w: 15, d: 9.5, h: 6.4, a: 0.4 };
+  const hy = 4.6;
+  k.box("stone", 19, 2.4, 14, { y: hy - 3.2, ry: -hall.a });
+  k.box("stone", 21, 2.2, 16, { y: hy - 5.3, ry: -hall.a, shade: 0.96 });
+  // the stair up to the hall's doors — starts out on the hill, climbs inward
+  k.stairs("stone", {
+    steps: 8, w: 6.5, rise: 0.34, run: 1.0,
+    x: Math.cos(hall.a) * 17.5, z: Math.sin(hall.a) * 17.5, a: hall.a + Math.PI,
+  });
+  const ca = Math.cos(hall.a);
+  const sa = Math.sin(hall.a);
+  const P = (dx: number, dz: number): [number, number] => [dx * ca - dz * sa, dx * sa + dz * ca];
+
+  k.box("timber", hall.w, hall.h, hall.d, { ...pt(P(0, 0), hy + hall.h / 2), ry: -hall.a });
+  // carved posts down the long walls
+  for (let i = 0; i < 7; i++) {
+    const t = (i / 6 - 0.5) * (hall.w - 1.2);
+    for (const sz of [-1, 1]) {
+      k.box("beam", 0.5, hall.h, 0.4, { ...pt(P(t, (sz * hall.d) / 2), hy + hall.h / 2), ry: -hall.a });
+    }
+  }
+  // golden thatch roof, steeply pitched, with a gilded ridge
+  const pitch = 0.78;
+  const rise = Math.tan(pitch) * (hall.d / 2 + 1.5);
+  for (const sz of [-1, 1]) {
+    k.box("gold", hall.w + 2.4, 0.4, ((hall.d / 2 + 1.6) / Math.cos(pitch)) * 2.05, {
+      ...pt(P(0, (sz * (hall.d / 2 + 1.5)) / 2), hy + hall.h + rise / 2),
+      ry: -hall.a,
+      rx: sz * pitch,
+    });
+  }
+  k.box("gold", hall.w + 2.0, 0.5, 0.6, { ...pt(P(0, 0), hy + hall.h + rise), ry: -hall.a });
+  for (const sx of [-1, 1]) {
+    k.wedge("timber", hall.d + 3.0, rise, 0.5, {
+      ...pt(P((sx * hall.w) / 2, 0), hy + hall.h + rise / 2),
+      ry: -hall.a + Math.PI / 2,
+    });
+    // crossed horse-head gables
+    for (const sr of [-1, 1]) {
+      k.box("gold", 0.4, 3.4, 0.4, {
+        ...pt(P((sx * hall.w) / 2, 0), hy + hall.h + rise + 1.3),
+        ry: -hall.a,
+        rz: sr * 0.5,
+      });
+    }
+    k.cone("gold", 0.45, 1.4, 6, {
+      ...pt(P((sx * hall.w) / 2, 0), hy + hall.h + rise + 3.1),
+      rz: sx * 0.5,
+    });
+  }
+  // the great doors, framed by gilded pillars
+  for (const sz of [-1, 1]) {
+    k.cyl("gold", 0.36, 0.46, hall.h, 8, { ...pt(P(hall.w / 2 - 0.2, sz * 2.1), hy + hall.h / 2), ry: -hall.a });
+  }
+  k.archWall("beam", 4.4, hall.h * 0.8, 0.4, 2.4, 3.6, 0, {
+    ...pt(P(hall.w / 2 + 0.1, 0), hy + (hall.h * 0.8) / 2),
+    ry: -hall.a + Math.PI / 2,
+  });
+  k.box("window", 2.3, 3.2, 0.15, { ...pt(P(hall.w / 2 - 0.1, 0), hy + 1.9), ry: -hall.a + Math.PI / 2, flat: true });
+  // the banners of the Mark either side of the doors
+  for (const sz of [-1, 1]) {
+    k.cyl("beam", 0.12, 0.15, 7.0, 5, { ...pt(P(hall.w / 2 + 1.6, sz * 3.6), hy + 3.5), ry: -hall.a });
+    k.plane("clothGreen", 1.5, 2.8, { ...pt(P(hall.w / 2 + 1.6, sz * 3.6), hy + 5.6), ry: -hall.a + Math.PI / 2, flat: true });
+  }
+
+  // the village winding down the hill
+  const houses: [number, number, number, number][] = [
+    [12, 7, 0.7, 0.95], [17, -4, -0.4, 0.85], [7, -12, 1.9, 0.9], [-9, 11, 2.6, 0.85],
+    [-14, -6, -1.2, 0.8], [-4, -17, 0.8, 0.75], [15, 13, 2.2, 0.8], [-18, 4, 1.1, 0.7],
+  ];
+  for (const [x, z, a, s] of houses) {
+    cottage(k, { x, z, a, s, wall: "timber", roof: "thatch" });
+    // a stack of firewood or a hay rick beside each
+    if (r() > 0.4) k.cone("thatch", 1.5 * s, 3.0 * s, 8, { x: x + 3.2 * s, y: 1.5 * s, z: z + 2.4 * s });
+  }
+  // the way up to the hall
+  for (let i = 0; i < 12; i++) {
+    const t = i / 11;
+    k.box("earth", 3.2, 0.24, 2.4, { x: 22 - t * 8, y: t * 1.2 + 0.1, z: 7 - t * 5, ry: 0.55, shade: 1.02 });
+  }
+  // palisade with gate towers
+  for (let i = 0; i < 30; i++) {
+    const a = (i / 30) * Math.PI * 2;
+    if (Math.abs(Math.atan2(Math.sin(a - 0.35), Math.cos(a - 0.35))) < 0.16) continue;
+    k.cyl("beam", 0.34, 0.42, 4.0, 6, { x: Math.cos(a) * 22, y: 2.0, z: Math.sin(a) * 18 });
+    k.cone("beam", 0.36, 0.6, 6, { x: Math.cos(a) * 22, y: 4.3, z: Math.sin(a) * 18 });
+  }
+  for (const sg of [-1, 1]) {
+    k.box("timber", 2.2, 6.4, 2.2, { x: Math.cos(0.35) * 22, y: 3.2, z: Math.sin(0.35) * 18 + sg * 3.2 });
+    k.cone("thatch", 2.0, 2.2, 4, { x: Math.cos(0.35) * 22, y: 7.4, z: Math.sin(0.35) * 18 + sg * 3.2, ry: 0.79 });
+  }
+}
+
+/** helper: spread a rotated local offset into a kit transform */
+function pt(p: [number, number], y: number) {
+  return { x: p[0], y, z: p[1] };
 }
 
 function Edoras() {
+  const built = useBuilt(buildEdoras);
   return (
     <Grounded u={SITES.edoras.u} v={SITES.edoras.v}>
-      {/* Meduseld, the Golden Hall */}
-      <group position={[0, 4.5, 0]} rotation={[0, 0.4, 0]}>
-        {/* carved plinth and stair */}
-        <mesh material={M.greyStone} position={[0, -3.6, 0]} receiveShadow>
-          <boxGeometry args={[17, 2.2, 12]} />
-        </mesh>
-        <mesh material={M.greyStone} position={[8.2, -4.4, 0]} rotation={[0, 0, -0.35]} castShadow>
-          <boxGeometry args={[6, 1.4, 4.5]} />
-        </mesh>
-        <mesh material={M.wood} position={[0, 0.5, 0]} castShadow>
-          <boxGeometry args={[13, 6, 8.5]} />
-        </mesh>
-        {/* carved gold door-pillars */}
-        {[-1, 1].map((s2) => (
-          <mesh key={s2} material={M.gold} position={[6.6, 0.4, s2 * 1.9]} castShadow>
-            <cylinderGeometry args={[0.32, 0.4, 5.6, 7]} />
-          </mesh>
-        ))}
-        {/* pitched golden roof */}
-        <mesh material={M.gold} position={[0, 5.1, 2.2]} rotation={[0.62, 0, 0]} castShadow>
-          <boxGeometry args={[14, 0.5, 6.1]} />
-        </mesh>
-        <mesh material={M.gold} position={[0, 5.1, -2.2]} rotation={[-0.62, 0, 0]} castShadow>
-          <boxGeometry args={[14, 0.5, 6.1]} />
-        </mesh>
-        <mesh material={M.window} position={[6.55, 0.7, 0]}>
-          <boxGeometry args={[0.12, 2.4, 2.4]} />
-        </mesh>
-        {/* crossed horse-head gables at both ends */}
-        {[-1, 1].map((s2) => (
-          <group key={s2} position={[s2 * 7.2, 6.7, 0]}>
-            <mesh material={M.gold} rotation={[0, 0, s2 * 0.5]} castShadow>
-              <boxGeometry args={[0.35, 2.6, 0.35]} />
-            </mesh>
-            <mesh material={M.gold} rotation={[0, 0, -s2 * 0.5]} castShadow>
-              <boxGeometry args={[0.35, 2.6, 0.35]} />
-            </mesh>
-          </group>
-        ))}
-        {/* the banner of the Mark */}
-        <mesh material={M.bannerGreen} position={[7.4, 4.4, 2.8]}>
-          <planeGeometry args={[1.1, 2.0]} />
-        </mesh>
-      </group>
-      {/* the village winding down the hill */}
-      <RohanHouse x={12} z={7} a={0.7} s={0.9} />
-      <RohanHouse x={16} z={-4} a={-0.4} s={0.8} />
-      <RohanHouse x={7} z={-11} a={1.9} s={0.85} />
-      <RohanHouse x={-9} z={10} a={2.6} s={0.8} />
-      <RohanHouse x={-13} z={-6} a={-1.2} s={0.75} />
-      {/* the way up to the hall */}
-      <mesh material={M.woodDark} position={[14, 0.25, 2]} rotation={[-Math.PI / 2, 0, 0.5]}>
-        <planeGeometry args={[2.6, 16]} />
-      </mesh>
-      {/* palisade with gate-towers */}
-      {Array.from({ length: 18 }, (_, i) => {
-        const a = (i / 18) * Math.PI * 2;
-        if (Math.abs(a - 0.35) < 0.16) return null; // the gate gap, facing the road
-        return (
-          <mesh key={i} material={M.woodDark} position={[Math.cos(a) * 21, 1.7, Math.sin(a) * 17]} castShadow>
-            <boxGeometry args={[0.7, 3.4, 0.7]} />
-          </mesh>
-        );
-      })}
-      {[-0.55, 1.25].map((za, i) => (
-        <mesh key={"gt" + i} material={M.wood} position={[Math.cos(0.35) * 21, 2.6, Math.sin(0.35) * 17 + (i === 0 ? -3 : 3)]} castShadow>
-          <boxGeometry args={[1.4, 5.2, 1.4]} />
-        </mesh>
-      ))}
+      <primitive object={built} />
+      <Plume position={[0, 16, 0]} color="#c9c2b4" count={18} spread={1.4} height={26} size={2.2} rise={5} additive={false} opacity={0.28} />
+      <Lamp color="#ffd07a" intensity={70} distance={70} position={[8, 9, 0]} decay={2} />
     </Grounded>
   );
 }
 
-// ── Isengard: the tower of Orthanc in its ring ───────────────────────────────
+// ── Isengard: Orthanc in the ring of Nan Curunír ────────────────────────────
+
+function buildOrthanc(k: Kit) {
+  const r = rng(4949);
+  // the plinth
+  k.cyl("obsidian", 7.0, 8.6, 2.4, 8, { y: 1.2 });
+  // the shaft: four welded piers around a core, tapering to the horns
+  k.cyl("obsidian", 3.4, 5.6, 44, 4, { y: 22, ry: Math.PI / 4 });
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    k.cyl("black", 1.15, 2.1, 50, 4, { x: Math.cos(a) * 3.1, y: 25, z: Math.sin(a) * 3.1, ry: Math.PI / 4 });
+    // the horn: the pier continues past the shaft and leans outward.
+    // ry runs last, so a plain rz lean gets carried round to face outward.
+    k.cyl("obsidian", 0.35, 1.1, 11, 4, {
+      x: Math.cos(a) * 4.3, y: 55.0, z: Math.sin(a) * 4.3,
+      ry: a, rz: -0.15,
+    });
+  }
+  // string courses give the tower its scale
+  for (let i = 1; i <= 5; i++) {
+    const y = i * 7.6;
+    const t = 1 - y / 62;
+    k.cyl("black", 4.2 * t + 1.4, 4.4 * t + 1.5, 0.6, 4, { y, ry: Math.PI / 4 });
+  }
+  // the stair and the door at its head
+  for (let i = 0; i < 12; i++) {
+    k.box("obsidian", 1.0, 0.42, 4.4 - i * 0.12, { x: 8.6 - i * 0.42, y: 0.2 + i * 0.42, z: 0 });
+  }
+  k.archWall("black", 5.0, 6.4, 1.0, 2.0, 3.2, 0, { x: 4.4, y: 8.4, z: 0, ry: Math.PI / 2 });
+  k.box("obsidian", 3.0, 0.5, 4.0, { x: 5.4, y: 5.2, z: 0 });
+  for (const sz of [-1, 1]) {
+    k.cyl("obsidian", 0.16, 0.16, 1.4, 5, { x: 6.6, y: 5.9, z: sz * 1.8 });
+  }
+  k.box("window", 0.16, 1.6, 1.2, { x: 4.9, y: 9.6, z: 0, flat: true });
+  // higher windows up the shaft
+  for (let i = 0; i < 4; i++) {
+    k.box("window", 0.16, 1.2, 0.8, { x: 3.9 - i * 0.35, y: 18 + i * 8, z: 0, flat: true });
+  }
+
+  // the ring-wall of Isengard, gate open to the south
+  for (let i = 0; i < 34; i++) {
+    const a = (i / 34) * Math.PI * 2;
+    if (Math.abs(Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2))) < 0.2) continue;
+    k.box("dark", 2.0, 5.0, 5.4, { x: Math.cos(a) * 27, y: 2.5, z: Math.sin(a) * 27, ry: -a });
+    k.box("dark", 2.4, 0.7, 5.6, { x: Math.cos(a) * 27, y: 5.2, z: Math.sin(a) * 27, ry: -a, shade: 0.95 });
+  }
+  k.merlonRing("dark", { r: 27, y: 5.5, count: 46, w: 1.4, h: 1.2, d: 1.0, gapAt: Math.PI / 2, gapArc: 0.24 });
+  for (const sx of [-1, 1]) {
+    k.cyl("dark", 2.6, 3.2, 9.5, 10, { x: sx * 6.2, y: 4.75, z: 26.2 });
+    k.merlonRing("dark", { cx: sx * 6.2, cz: 26.2, r: 2.6, y: 9.5, count: 10, w: 0.8, h: 0.9, d: 0.7 });
+  }
+  // the pits and engines of Saruman
+  for (const [px, pz] of [[12, 8], [-10, 12], [-15, -8], [9, -14], [17, -3]] as const) {
+    k.cyl("dark", 3.4, 2.6, 1.6, 12, { x: px, y: -0.4, z: pz, shade: 0.85 });
+    k.cyl("forge", 2.5, 2.5, 0.4, 12, { x: px, y: 0.3, z: pz, flat: true });
+    // spoil heaps and a windlass
+    k.cone("dark", 2.2, 1.8, 7, { x: px + 4.2, y: 0.9, z: pz + 1.6, shade: 0.9 });
+    k.box("beam", 0.3, 3.2, 0.3, { x: px + 2.8, y: 1.6, z: pz - 2.4, rz: 0.2 });
+  }
+  // felled and dead trees at the wall's foot
+  for (let i = 0; i < 5; i++) {
+    const a = r() * Math.PI * 2;
+    const d = 19 + r() * 5;
+    conifer(k, { x: Math.cos(a) * d, z: Math.sin(a) * d, s: 0.55 + r() * 0.3, leaf: "dark", bark: "beam" });
+  }
+  for (let i = 0; i < 6; i++) {
+    const a = r() * Math.PI * 2;
+    const d = 12 + r() * 12;
+    k.cyl("beam", 0.35, 0.5, 5.5, 6, { x: Math.cos(a) * d, y: 0.4, z: Math.sin(a) * d, rz: Math.PI / 2, ry: r() * 3 });
+  }
+}
+
 function Orthanc() {
+  const built = useBuilt(buildOrthanc);
   return (
     <Grounded u={SITES.orthanc.u} v={SITES.orthanc.v}>
-      <mesh material={M.obsidian} position={[0, 23, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
-        <cylinderGeometry args={[3.2, 5.0, 46, 4]} />
-      </mesh>
-      {/* glinting facets */}
-      <mesh material={M.blackTower} position={[0, 12, 0]} rotation={[0, Math.PI / 4, 0]}>
-        <cylinderGeometry args={[4.4, 5.4, 9, 4]} />
-      </mesh>
-      {/* four prongs of the pinnacle */}
-      {[0, 1, 2, 3].map((k) => (
-        <mesh
-          key={k}
-          material={M.obsidian}
-          position={[Math.cos((k * Math.PI) / 2 + Math.PI / 4) * 2.4, 50.5, Math.sin((k * Math.PI) / 2 + Math.PI / 4) * 2.4]}
-          castShadow
-        >
-          <boxGeometry args={[1.1, 9.5, 1.1]} />
-        </mesh>
+      <primitive object={built} />
+      {[[12, 8], [-10, 12], [-15, -8], [9, -14], [17, -3]].map(([px, pz], i) => (
+        <Plume key={i} position={[px, 1, pz]} color="#5a5148" count={16} spread={1.6} height={28} size={3.0} rise={5} additive={false} opacity={0.34} />
       ))}
-      {/* the balcony above the door */}
-      <mesh material={M.blackTower} position={[3.6, 8, 0]} castShadow>
-        <boxGeometry args={[2.2, 0.5, 3.2]} />
-      </mesh>
-      <mesh material={M.window} position={[4.4, 9.2, 0]}>
-        <boxGeometry args={[0.12, 1.4, 1.2]} />
-      </mesh>
-      {/* the ring-wall of Isengard, gate open to the south */}
-      {Array.from({ length: 20 }, (_, i) => {
-        const a = (i / 20) * Math.PI * 2;
-        if (Math.abs(a - Math.PI / 2) < 0.22) return null; // south gate
-        return (
-          <mesh key={i} material={M.darkStone} position={[Math.cos(a) * 26, 1.8, Math.sin(a) * 26]} rotation={[0, -a, 0]} castShadow>
-            <boxGeometry args={[1.6, 3.6, 8.6]} />
-          </mesh>
-        );
-      })}
-      {/* gate pylons */}
-      {[-1, 1].map((s2) => (
-        <mesh key={s2} material={M.darkStone} position={[s2 * 6.4, 3.2, 25.4]} castShadow>
-          <boxGeometry args={[2.2, 6.4, 2.6]} />
-        </mesh>
-      ))}
-      {/* the pits and engines of Saruman */}
-      {[
-        [12, 8], [-10, 12], [-15, -8], [9, -14],
-      ].map(([px, pz], i) => (
-        <group key={"pit" + i}>
-          <mesh material={M.forge} position={[px, 0.35, pz]} rotation={[-Math.PI / 2, 0, 0]}>
-            <circleGeometry args={[2.6, 10]} />
-          </mesh>
-          <Plume position={[px, 1, pz]} color="#5a5148" count={16} spread={1.4} height={26} size={2.8} rise={5} additive={false} opacity={0.35} />
-        </group>
-      ))}
-      {/* dead trees at the wall's foot */}
-      {[
-        [20, -12, 0.6], [-21, 4, 0.5], [16, 16, 0.55],
-      ].map(([tx, tz, ts], i) => (
-        <group key={"dt" + i} position={[tx, 0, tz]} scale={ts}>
-          <mesh material={M.woodDark} position={[0, 2.4, 0]} castShadow>
-            <cylinderGeometry args={[0.22, 0.5, 4.8, 5]} />
-          </mesh>
-          <mesh material={M.woodDark} position={[0.8, 4.6, 0]} rotation={[0, 0, -0.7]} castShadow>
-            <cylinderGeometry args={[0.1, 0.18, 2.6, 4]} />
-          </mesh>
-        </group>
-      ))}
+      <Lamp color="#ff8a3a" intensity={44} distance={70} position={[0, 3, 6]} decay={2} />
     </Grounded>
   );
 }
 
-// ── Weathertop: the ruined watchtower of Amon Sûl ────────────────────────────
+// ── Weathertop: Amon Sûl in ruin ────────────────────────────────────────────
+
+function buildWeathertop(k: Kit) {
+  const r = rng(421);
+  // the levelled crown
+  k.cyl("stone", 10.0, 11.0, 1.0, 20, { y: 0.5, shade: 1.03 });
+  // the broken ring wall — courses of masonry, higher on the north
+  const segs = 22;
+  for (let i = 0; i < segs; i++) {
+    const a = (i / segs) * Math.PI * 2;
+    const keep = Math.sin(a * 1.7 + 0.6) * 0.5 + 0.5;
+    if (keep < 0.28) continue;
+    const h = 1.2 + keep * 4.4;
+    k.box("ruin", 1.5, h, 3.4, { x: Math.cos(a) * 10.5, y: h / 2, z: Math.sin(a) * 10.5, ry: -a, rz: (r() - 0.5) * 0.07 });
+    if (keep > 0.75) {
+      k.box("ruin", 1.7, 0.6, 3.6, { x: Math.cos(a) * 10.5, y: h + 0.3, z: Math.sin(a) * 10.5, ry: -a, shade: 0.94 });
+    }
+  }
+  // the ring of fallen columns
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + 0.2;
+    const h = 2.4 + r() * 5.0;
+    const fallen = r() < 0.28;
+    if (fallen) {
+      k.cyl("stone", 0.7, 0.82, h, 9, { x: Math.cos(a) * 6.8, y: 0.75, z: Math.sin(a) * 6.8, rz: Math.PI / 2, ry: a * 1.7 });
+    } else {
+      k.cyl("stone", 0.72, 0.88, h, 9, { x: Math.cos(a) * 6.8, y: h / 2, z: Math.sin(a) * 6.8, rz: (r() - 0.5) * 0.12 });
+      k.box("stone", 1.9, 0.45, 1.9, { x: Math.cos(a) * 6.8, y: h + 0.2, z: Math.sin(a) * 6.8, ry: -a });
+    }
+  }
+  // fallen lintels and tumbled blocks
+  k.box("stone", 6.4, 1.1, 1.4, { x: 2.5, y: 0.55, z: -3, ry: 0.7, rz: 0.08 });
+  k.box("stone", 4.8, 1.0, 1.3, { x: -3.6, y: 0.5, z: 4.4, ry: -1.1 });
+  for (let i = 0; i < 12; i++) {
+    const a = r() * Math.PI * 2;
+    const d = 3 + r() * 9;
+    const s = 0.6 + r() * 1.1;
+    k.add("ruin", new THREE.DodecahedronGeometry(s, 0), {
+      x: Math.cos(a) * d, y: s * 0.55, z: Math.sin(a) * d, rx: r() * 3, ry: r() * 3, rz: r() * 3,
+    });
+  }
+  // the scorched hollow where the fire was kindled
+  k.cyl("dark", 2.2, 2.5, 0.35, 14, { y: 1.1, shade: 0.75 });
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    k.cyl("beam", 0.1, 0.16, 1.6, 5, { x: Math.cos(a) * 0.7, y: 1.7, z: Math.sin(a) * 0.7, rx: Math.sin(a) * 0.5, rz: -Math.cos(a) * 0.5 });
+  }
+  // the stair up the south side
+  for (let i = 0; i < 8; i++) {
+    k.box("ruin", 3.2, 0.4, 1.0, { x: 0, y: -0.2 + i * 0.4, z: 14.5 - i * 0.9, shade: 1.0 });
+  }
+}
+
 function Weathertop() {
-  const cols = useMemo(() => {
-    let sd = 421;
-    const rand = () => {
-      sd = (sd * 1664525 + 1013904223) >>> 0;
-      return sd / 4294967296;
-    };
-    return Array.from({ length: 8 }, (_, i) => ({
-      a: (i / 8) * Math.PI * 2 + rand() * 0.2,
-      h: 2.5 + rand() * 4.5,
-      lean: (rand() - 0.5) * 0.16,
-    }));
-  }, []);
+  const built = useBuilt(buildWeathertop);
   return (
     <Grounded u={SITES.weathertop.u} v={SITES.weathertop.v}>
-      {cols.map((c, i) => (
-        <mesh
-          key={i}
-          material={M.greyStone}
-          position={[Math.cos(c.a) * 7.5, c.h / 2, Math.sin(c.a) * 7.5]}
-          rotation={[c.lean, 0, c.lean * 1.4]}
-          castShadow
-        >
-          <cylinderGeometry args={[0.75, 0.9, c.h, 7]} />
-        </mesh>
-      ))}
-      {/* the broken ring-wall of Amon Sûl */}
-      {[0.3, 1.5, 2.8, 4.1, 5.3].map((a, i) => (
-        <mesh
-          key={"rw" + i}
-          material={M.ruinStone}
-          position={[Math.cos(a) * 11.5, 0.9 + (i % 2) * 0.4, Math.sin(a) * 11.5]}
-          rotation={[0, -a, (i % 2 ? -1 : 1) * 0.06]}
-          castShadow
-        >
-          <boxGeometry args={[1.2, 1.8 + (i % 3) * 0.8, 7 + (i % 2) * 3]} />
-        </mesh>
-      ))}
-      {/* fallen lintel and tumbled blocks */}
-      <mesh material={M.greyStone} position={[2.5, 0.5, -3]} rotation={[0, 0.7, 0.1]} castShadow>
-        <boxGeometry args={[6, 1, 1.3]} />
-      </mesh>
-      {[
-        [6, 4, 0.9], [-5, 6, 0.7], [-8, -4, 1.1], [3, 9, 0.6],
-      ].map(([bx, bz, bs], i) => (
-        <mesh key={"bl" + i} material={M.ruinStone} position={[bx, bs * 0.5, bz]} rotation={[bx, bz, 0]} castShadow>
-          <boxGeometry args={[bs * 1.6, bs, bs * 1.2]} />
-        </mesh>
-      ))}
-      <mesh material={M.greyStone} position={[0, 0.35, 0]} receiveShadow>
-        <cylinderGeometry args={[9.5, 10.2, 0.7, 14]} />
-      </mesh>
+      <primitive object={built} />
     </Grounded>
   );
 }
 
-// ── The Grey Havens: a swan-ship at the quay ─────────────────────────────────
+// ── The Grey Havens: Mithlond and a swan-ship at the quay ───────────────────
+
+function buildHavens(k: Kit) {
+  // quays
+  k.box("elf", 26, 2.6, 7, { y: 1.3, ry: -0.35 });
+  k.box("elf", 15, 2.2, 5, { x: -8, y: 1.1, z: 8.4, ry: 0.9 });
+  k.cyl("elf", 14, 15, 1.0, 26, { y: 0.2, shade: 0.96 });
+  // mooring bollards along the edge
+  for (let i = 0; i < 6; i++) {
+    const t = i / 5 - 0.5;
+    k.cyl("silver", 0.28, 0.36, 1.0, 8, {
+      x: t * 22 * Math.cos(-0.35) - 3.0 * Math.sin(-0.35),
+      y: 3.0,
+      z: t * 22 * Math.sin(-0.35) + 3.0 * Math.cos(-0.35),
+    });
+  }
+  // twin lamp-towers of the haven
+  for (const [tx, tz] of [[-5, 0], [8, -3]] as const) {
+    k.cyl("elf", 1.05, 1.7, 9.0, 10, { x: tx, y: 7.1, z: tz });
+    k.cyl("elf", 1.9, 1.9, 0.5, 10, { x: tx, y: 11.8, z: tz });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      k.cyl("silver", 0.09, 0.11, 1.8, 5, { x: tx + Math.cos(a) * 1.05, y: 12.9, z: tz + Math.sin(a) * 1.05 });
+    }
+    k.sphere("window", 0.85, 10, 8, { x: tx, y: 13.0, z: tz, flat: true });
+    k.cone("silver", 1.5, 2.6, 10, { x: tx, y: 15.1, z: tz });
+    k.cone("silver", 0.16, 1.2, 6, { x: tx, y: 17.0, z: tz });
+  }
+  // an arcaded hall above the water stair
+  k.box("elf", 12, 5.0, 8, { x: -12, y: 5.1, z: -6, ry: 0.35 });
+  k.colonnade("elf", { from: [-17, -1.6], to: [-7.6, -5.2], count: 5, y: 2.6, h: 5.0, r: 0.28 });
+  k.box("slate", 14, 0.5, 10, { x: -12, y: 7.8, z: -6, ry: 0.35 });
+  k.cone("slate", 8.4, 4.2, 4, { x: -12, y: 9.8, z: -6, ry: 0.35 + Math.PI / 4 });
+  // lamps along the quay edge
+  for (const lx of [-10, -3.5, 3, 9.5]) {
+    k.cyl("silver", 0.09, 0.12, 3.0, 6, { x: lx, y: 4.1, z: 2.6 });
+    k.sphere("window", 0.26, 8, 6, { x: lx, y: 5.8, z: 2.6, flat: true });
+  }
+}
+
+function buildSwanShip(k: Kit) {
+  k.aoDepth = 0;
+  // hull: a lifted, tapered shell
+  k.sphere("elf", 1.7, 16, 10, { y: 0.6, s: [4.6, 0.62, 1.05], flat: true });
+  k.sphere("elf", 1.5, 14, 10, { y: 1.25, s: [4.2, 0.5, 0.98], flat: true });
+  k.box("elf", 13.2, 0.34, 2.6, { y: 1.5, flat: true });
+  // the swan's breast and neck at the prow
+  k.sphere("elf", 1.3, 12, 10, { x: 5.6, y: 1.9, z: 0, s: [1.2, 1.0, 0.9], flat: true });
+  for (let i = 0; i < 6; i++) {
+    const t = i / 5;
+    k.cyl("elf", 0.3 - t * 0.1, 0.42 - t * 0.1, 0.9, 8, {
+      x: 6.3 + Math.sin(t * 1.5) * 1.5,
+      y: 2.6 + t * 2.4,
+      z: 0,
+      rz: -0.5 + t * 0.9,
+      flat: true,
+    });
+  }
+  k.sphere("elf", 0.46, 10, 8, { x: 7.5, y: 5.5, z: 0, flat: true });
+  k.cone("gold", 0.17, 0.9, 6, { x: 8.1, y: 5.35, z: 0, rz: -1.3, flat: true });
+  // folded wings along the sides
+  for (const sz of [-1, 1]) {
+    k.sphere("elf", 1.6, 12, 8, { x: 2.4, y: 2.2, z: sz * 1.35, s: [1.9, 0.85, 0.42], rz: 0.12, flat: true });
+  }
+  // stern
+  k.cyl("elf", 0.24, 0.5, 3.4, 8, { x: -6.2, y: 2.8, z: 0, rz: 0.6, flat: true });
+  k.cone("gold", 0.2, 0.8, 6, { x: -7.3, y: 4.3, z: 0, rz: 0.5, flat: true });
+  // mast, yard and rigging
+  k.cyl("beam", 0.14, 0.22, 9.0, 8, { y: 6.0, flat: true });
+  k.cyl("beam", 0.1, 0.1, 5.6, 6, { y: 9.4, rx: Math.PI / 2, flat: true });
+  for (const sz of [-1, 1]) {
+    k.cyl("silver", 0.035, 0.035, 7.4, 4, { x: -2.6 * 0.5, y: 6.4, z: sz * 1.3, rz: 0.42, rx: sz * 0.2, flat: true });
+  }
+  k.plane("cloth", 5.4, 5.0, { y: 7.0, ry: Math.PI / 2, flat: true });
+  k.plane("cloth", 3.0, 2.6, { x: 3.4, y: 5.4, ry: Math.PI / 2, rz: 0.25, flat: true });
+}
+
 function GreyHavens() {
+  const quay = useBuilt(buildHavens);
+  const shipGeo = useBuilt(buildSwanShip);
   const ship = useRef<THREE.Group>(null);
   const x = toWorldX(0.272);
   const z = toWorldZ(0.291);
@@ -1009,73 +1490,18 @@ function GreyHavens() {
   return (
     <>
       <group ref={ship} rotation={[0, 0.6, 0]}>
-        {/* hull */}
-        <mesh material={M.whiteTrim} position={[0, 0.6, 0]} castShadow>
-          <sphereGeometry args={[1.6, 12, 8]} />
-        </mesh>
-        <mesh material={M.whiteTrim} position={[0, 1.0, 0]} scale={[4.4, 0.55, 1]} castShadow>
-          <sphereGeometry args={[1.6, 12, 8]} />
-        </mesh>
-        {/* swan prow */}
-        <mesh material={M.whiteTrim} position={[6.4, 2.6, 0]} rotation={[0, 0, 1.0]} castShadow>
-          <cylinderGeometry args={[0.22, 0.42, 4.4, 7]} />
-        </mesh>
-        <mesh material={M.whiteTrim} position={[7.3, 4.3, 0]} castShadow>
-          <sphereGeometry args={[0.5, 8, 6]} />
-        </mesh>
-        <mesh material={M.gold} position={[7.9, 4.2, 0]} rotation={[0, 0, -0.5]}>
-          <coneGeometry args={[0.16, 0.8, 5]} />
-        </mesh>
-        {/* mast + sail */}
-        <mesh material={M.wood} position={[0, 5, 0]}>
-          <cylinderGeometry args={[0.14, 0.2, 8, 6]} />
-        </mesh>
-        <mesh material={M.sail} position={[-1.4, 5.4, 0]} rotation={[0, Math.PI / 2, 0]}>
-          <planeGeometry args={[5.4, 4.6]} />
-        </mesh>
+        <primitive object={shipGeo} />
       </group>
-      {/* Mithlond — the quays at the head of the Gulf */}
       <Grounded u={SITES.havens.u} v={SITES.havens.v}>
-        <mesh material={M.whiteStone} position={[0, 1.2, 0]} rotation={[0, -0.35, 0]} castShadow>
-          <boxGeometry args={[24, 2.4, 6]} />
-        </mesh>
-        <mesh material={M.whiteStone} position={[-8, 1.0, 8]} rotation={[0, 0.9, 0]} castShadow>
-          <boxGeometry args={[14, 2, 4.5]} />
-        </mesh>
-        {/* twin lamp-towers of the haven */}
-        {[
-          [-4, 0], [7, -3],
-        ].map(([tx, tz], i) => (
-          <group key={i} position={[tx, 0, tz]}>
-            <mesh material={M.whiteTrim} position={[0, 4.9, 0]} castShadow>
-              <cylinderGeometry args={[1.0, 1.5, 7.5, 8]} />
-            </mesh>
-            <mesh material={M.whiteTrim} position={[0, 9.4, 0]} castShadow>
-              <coneGeometry args={[1.35, 2.8, 8]} />
-            </mesh>
-            <mesh material={M.window} position={[0, 7.4, 1.15]}>
-              <boxGeometry args={[0.5, 0.9, 0.1]} />
-            </mesh>
-          </group>
-        ))}
-        {/* lamps along the quay edge */}
-        {[-9, -3, 3, 9].map((lx, i) => (
-          <group key={"l" + i} position={[lx, 2.4, 2.6]}>
-            <mesh material={M.silverTrunk}>
-              <cylinderGeometry args={[0.08, 0.1, 2.6, 5]} />
-            </mesh>
-            <mesh material={M.window} position={[0, 1.5, 0]}>
-              <sphereGeometry args={[0.24, 6, 5]} />
-            </mesh>
-          </group>
-        ))}
-        <Lamp color="#dfe8ff" intensity={30} distance={50} position={[0, 9, 0]} decay={2} />
+        <primitive object={quay} />
+        <Lamp color="#dfe8ff" intensity={44} distance={64} position={[0, 11, 0]} decay={2} />
       </Grounded>
     </>
   );
 }
 
 // ── Moria: the West-gate, the Doors of Durin ────────────────────────────────
+
 /** Ithildin design: two pillars & arch, hollies, crown, seven stars, Star of Fëanor. */
 function makeDurinDoorTexture() {
   const W = 256;
@@ -1091,14 +1517,12 @@ function makeDurinDoorTexture() {
   ctx.lineWidth = 3;
   ctx.lineCap = "round";
 
-  // the two pillars
   for (const x of [46, W - 46]) {
     ctx.beginPath();
     ctx.moveTo(x, H - 20);
     ctx.lineTo(x, 96);
     ctx.stroke();
   }
-  // arch over the pillars (the tengwar inscription band)
   ctx.beginPath();
   ctx.arc(W / 2, 128, 84, Math.PI, 0);
   ctx.stroke();
@@ -1120,7 +1544,6 @@ function makeDurinDoorTexture() {
   }
   ctx.restore();
 
-  // the hollies — trunks entwining the pillars, crowned with leaves
   ctx.lineWidth = 2.2;
   for (const [x, sx] of [
     [46, 1],
@@ -1138,7 +1561,6 @@ function makeDurinDoorTexture() {
     }
   }
 
-  // crown and anvil of Durin
   ctx.lineWidth = 2.6;
   ctx.beginPath();
   ctx.moveTo(W / 2 - 22, 96);
@@ -1152,7 +1574,6 @@ function makeDurinDoorTexture() {
   ctx.stroke();
   ctx.strokeRect(W / 2 - 14, 104, 28, 10);
 
-  // seven stars above the crown
   const star = (cx: number, cy: number, r: number, points = 4) => {
     ctx.beginPath();
     for (let i = 0; i < points * 2; i++) {
@@ -1169,15 +1590,12 @@ function makeDurinDoorTexture() {
     const a = Math.PI + ((i + 0.5) / 7) * Math.PI;
     star(W / 2 + Math.cos(a) * 62, 118 + Math.sin(a) * 56, 5.5);
   }
-
-  // the Star of Fëanor, many-rayed, at the meeting of the doors
   star(W / 2, 196, 26, 8);
   ctx.lineWidth = 1.4;
   ctx.beginPath();
   ctx.arc(W / 2, 196, 32, 0, Math.PI * 2);
   ctx.stroke();
 
-  // the seam of the two doors
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   ctx.moveTo(W / 2, 230);
@@ -1191,22 +1609,60 @@ function makeDurinDoorTexture() {
   return tex;
 }
 
-function HollyTree({ x = 0, z = 0, s = 1 }: { x?: number; z?: number; s?: number }) {
-  return (
-    <group position={[x, 0, z]} scale={s}>
-      <mesh material={M.trunk} position={[0, 2.6, 0]} castShadow>
-        <cylinderGeometry args={[0.3, 0.55, 5.2, 6]} />
-      </mesh>
-      {[0, 1, 2].map((k) => (
-        <mesh key={k} material={M.holly} position={[0, 5.6 + k * 2.0, 0]} castShadow>
-          <coneGeometry args={[2.6 - k * 0.7, 3.0, 8]} />
-        </mesh>
-      ))}
-    </group>
-  );
+function buildMoria(k: Kit) {
+  const r = rng(507);
+  // The wall of the Silvertine. A single big box reads as a grey slab dropped
+  // on the mountain, so the face is built from tilted, differently-shaded
+  // buttresses over a buried core, and broken up with a scatter of crags.
+  k.box("rock", 22, 60, 52, { x: 15, y: 8, z: 0, shade: 0.86 });
+  for (let i = 0; i < 14; i++) {
+    const h = 16 + r() * 34;
+    const w = 4 + r() * 7;
+    k.box("rock", w, h, 7 + r() * 10, {
+      x: 2.2 + r() * 6,
+      y: h / 2 - 4 + r() * 10,
+      z: -24 + i * 3.6 + (r() - 0.5) * 3,
+      ry: (r() - 0.5) * 0.7,
+      rz: (r() - 0.5) * 0.22,
+      shade: 0.82 + r() * 0.4,
+    });
+  }
+  // crags shouldering over the gate
+  for (let i = 0; i < 7; i++) {
+    const s = 2.5 + r() * 5;
+    k.add("rock", new THREE.DodecahedronGeometry(s, 0), {
+      x: 1 + r() * 8, y: 18 + r() * 28, z: -22 + r() * 44,
+      rx: r() * 3, ry: r() * 3, rz: r() * 3, shade: 0.85 + r() * 0.35,
+    });
+  }
+  k.box("rock", 13, 44, 14, { x: 9, y: 24, z: -18, rz: 0.2, ry: 0.3, shade: 0.94 });
+  k.box("rock", 13, 38, 14, { x: 9, y: 21, z: 18, rz: 0.16, ry: -0.25, shade: 1.02 });
+  // the door recess and its dressed jambs
+  k.box("obsidian", 1.8, 16, 13.0, { x: 1.6, y: 8.0, z: 0 });
+  for (const sz of [-1, 1]) {
+    k.box("dwarf", 2.2, 17, 1.5, { x: 1.4, y: 8.5, z: sz * 6.9 });
+  }
+  k.archBand("dwarf", 6.2, 1.1, 2.2, { x: 1.4, y: 12.6, z: 0, ry: Math.PI / 2 });
+  // threshold steps down to the water
+  k.box("dwarf", 5, 1.4, 15, { x: -1.6, y: 0.7, z: 0 });
+  k.box("dwarf", 3.4, 0.5, 17, { x: -4.4, y: 0.25, z: 0 });
+  // the dark pool of the Watcher
+  k.cyl("blackWater", 13, 13, 0.4, 26, { x: -16, y: 0.4, z: 3, flat: true });
+  k.cyl("rock", 13.8, 14.6, 1.0, 26, { x: -16, y: 0.1, z: 3, shade: 0.88 });
+  // the two hollies of Eregion
+  conifer(k, { x: -3, z: -10.5, s: 1.5, leaf: "darkLeaf" });
+  conifer(k, { x: -3, z: 10.5, s: 1.3, leaf: "darkLeaf" });
+  // rubble of the old road
+  for (let i = 0; i < 14; i++) {
+    const s = 0.6 + r() * 1.6;
+    k.add("rock", new THREE.DodecahedronGeometry(s, 0), {
+      x: -6 - r() * 18, y: s * 0.6, z: (r() - 0.5) * 22, rx: r() * 3, ry: r() * 3, rz: r() * 3,
+    });
+  }
 }
 
 function MoriaGate() {
+  const built = useBuilt(buildMoria);
   const doorTex = useMemo(makeDurinDoorTexture, []);
   const glowMat = useMemo(
     () =>
@@ -1221,6 +1677,7 @@ function MoriaGate() {
       }),
     [doorTex],
   );
+  useEffect(() => () => { glowMat.dispose(); doorTex.dispose(); }, [glowMat, doorTex]);
   const glowRef = useRef<THREE.PointLight>(null);
   useFrame(({ clock }) => {
     const breathe = 0.9 + Math.sin(clock.elapsedTime * 0.8) * 0.25;
@@ -1229,47 +1686,11 @@ function MoriaGate() {
   });
   return (
     <Grounded u={SITES.moria.u} v={SITES.moria.v}>
-      {/* the sheer cliff-wall of the Silvertine, gate face looking west */}
-      <mesh material={M.darkStone} position={[10, 16, 0]} castShadow>
-        <boxGeometry args={[16, 44, 46]} />
-      </mesh>
-      <mesh material={M.greyStone} position={[6, 26, -17]} rotation={[0, 0, 0.18]} castShadow>
-        <boxGeometry args={[10, 30, 12]} />
-      </mesh>
-      <mesh material={M.greyStone} position={[6, 24, 17]} rotation={[0, 0, 0.15]} castShadow>
-        <boxGeometry args={[10, 26, 12]} />
-      </mesh>
-      {/* door recess and the stone doors */}
-      <mesh material={M.obsidian} position={[1.6, 7.5, 0]}>
-        <boxGeometry args={[1.6, 15, 12.5]} />
-      </mesh>
-      {/* the ithildin design, glowing faintly */}
-      <mesh material={glowMat} position={[0.7, 7.6, 0]} rotation={[0, -Math.PI / 2, 0]}>
+      <primitive object={built} />
+      <mesh material={glowMat} position={[0.62, 8.0, 0]} rotation={[0, -Math.PI / 2, 0]}>
         <planeGeometry args={[12, 15]} />
       </mesh>
-      {/* threshold steps */}
-      <mesh material={M.greyStone} position={[-1.6, 0.7, 0]} receiveShadow>
-        <boxGeometry args={[5, 1.4, 15]} />
-      </mesh>
-      <mesh material={M.greyStone} position={[-4.4, 0.25, 0]} receiveShadow>
-        <boxGeometry args={[3.4, 0.5, 17]} />
-      </mesh>
-      {/* the dark pool of the Watcher before the gate */}
-      <mesh material={M.blackWater} position={[-16, 0.42, 3]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[13, 22]} />
-      </mesh>
-      {/* the two hollies of Eregion */}
-      <HollyTree x={-3} z={-10.5} s={1.35} />
-      <HollyTree x={-3} z={10.5} s={1.2} />
-      {/* fallen rubble of the old road */}
-      {[
-        [-9, -5, 1.4], [-12, 7.5, 1.1], [-6, 6, 0.8], [-20, -6, 1.0],
-      ].map(([bx, bz, bs], i) => (
-        <mesh key={i} material={M.greyStone} position={[bx, bs * 0.6, bz]} rotation={[bx * 0.3, bz * 0.7, 0.2]} castShadow>
-          <dodecahedronGeometry args={[bs, 0]} />
-        </mesh>
-      ))}
-      <Lamp ref={glowRef} color="#9fd8ff" intensity={26} distance={44} position={[-4, 9, 0]} decay={2} />
+      <Lamp ref={glowRef} color="#9fd8ff" intensity={26} distance={48} position={[-4, 9, 0]} decay={2} />
     </Grounded>
   );
 }

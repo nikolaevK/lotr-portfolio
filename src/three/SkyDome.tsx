@@ -9,6 +9,8 @@ export const skyUniforms = {
   uTop: { value: new THREE.Color("#6f8fb8") },
   uHorizon: { value: new THREE.Color("#e8cf9e") },
   uSunColor: { value: new THREE.Color("#ffe7b8") },
+  /** ground bounce colour — read by the IBL probe, not by the dome itself */
+  uGround: { value: new THREE.Color("#8a7a5c") },
   uSunDir: { value: new THREE.Vector3(-0.45, 0.42, -0.55).normalize() },
   uFlash: { value: 0 },
 };

@@ -111,6 +111,62 @@ function buildCloudNoiseTexture() {
   return tex;
 }
 
+/**
+ * Ground grain for the near field. map.jpg gives roughly one texel per world
+ * unit, so anything closer than a few hundred units is a smear; this breaks the
+ * surface up at 14- and 50-unit scales and fades out with distance so it never
+ * shimmers on the horizon. Built from wrapped lattices so it tiles exactly —
+ * fbm would leave a seam right across Rohan.
+ */
+function buildDetailTexture() {
+  const S = 256;
+  const lattice = (n: number, seed: number) => {
+    let s = seed >>> 0;
+    const rand = () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+    const g = new Float32Array(n * n);
+    for (let i = 0; i < n * n; i++) g[i] = rand();
+    return (x: number, y: number) => {
+      const fx = x * n;
+      const fy = y * n;
+      const x0 = Math.floor(fx);
+      const y0 = Math.floor(fy);
+      const tx = fx - x0;
+      const ty = fy - y0;
+      const ex = tx * tx * (3 - 2 * tx);
+      const ey = ty * ty * (3 - 2 * ty);
+      const at = (ix: number, iy: number) => g[(((iy % n) + n) % n) * n + (((ix % n) + n) % n)];
+      const a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * ex;
+      const b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * ex;
+      return a + (b - a) * ey;
+    };
+  };
+  const l1 = lattice(8, 991);
+  const l2 = lattice(24, 4441);
+  const l3 = lattice(64, 77);
+  const data = new Uint8Array(S * S * 4);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const u = x / S;
+      const v = y / S;
+      const n = l1(u, v) * 0.5 + l2(u, v) * 0.32 + l3(u, v) * 0.18;
+      const i = (y * S + x) * 4;
+      data[i] = data[i + 1] = data[i + 2] = Math.max(0, Math.min(255, n * 255));
+      data[i + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export function Terrain() {
   const mapTex = useLoader(THREE.TextureLoader, "/assets/map.jpg");
   const setReady = useGame((s) => s.setReady);
@@ -118,6 +174,7 @@ export function Terrain() {
 
   const geometry = useMemo(buildGeometry, []);
   const cloudTex = useMemo(buildCloudNoiseTexture, []);
+  const detailTex = useMemo(buildDetailTexture, []);
 
   const uniforms = useMemo(
     () => ({
@@ -125,8 +182,9 @@ export function Terrain() {
       uTime: { value: 0 },
       uCloudTex: { value: cloudTex },
       uCloudAmt: { value: 1 },
+      uDetailTex: { value: detailTex },
     }),
-    [cloudTex],
+    [cloudTex, detailTex],
   );
 
   const material = useMemo(() => {
@@ -170,6 +228,7 @@ export function Terrain() {
            uniform float uTime;
            uniform float uCloudAmt;
            uniform sampler2D uCloudTex;
+           uniform sampler2D uDetailTex;
            varying vec2 vTUv;
            varying float vH;
            varying float vUp;
@@ -190,8 +249,10 @@ export function Terrain() {
              rockAmt = clamp(rockAmt, 0.0, 1.0);
              vec3 rockC = mix(vec3(0.42, 0.36, 0.30), vec3(0.32, 0.29, 0.27), slope * 2.0);
              c = mix(c, c * 0.35 + rockC * 0.75, rockAmt * uMorph);
+             // snow stops short of white: ACES clips anything brighter and the
+             // peaks lose every trace of their own shading
              float snowAmt = smoothstep(58.0, 76.0, vH) * smoothstep(0.75, 0.35, slope);
-             c = mix(c, vec3(0.93, 0.93, 0.95), snowAmt * uMorph);
+             c = mix(c, vec3(0.84, 0.85, 0.88), snowAmt * uMorph);
 
              // the green country of the Shire
              float shire = zoneMask(muv, vec2(0.352, 0.262), 0.085);
@@ -212,6 +273,17 @@ export function Terrain() {
              // shallow sea bed tint under the water sheet
              float under = smoothstep(${SEA_LEVEL.toFixed(2)} + 1.5, ${SEA_LEVEL.toFixed(2)} - 3.0, vH + (1.0 - uMorph) * 100.0);
              c = mix(c, c * vec3(0.45, 0.62, 0.62), under * 0.6);
+
+             // near-field ground grain — fades out before it can shimmer
+             float detailAmt = smoothstep(1200.0, 90.0, length(vViewPosition)) * uMorph;
+             if (detailAmt > 0.002) {
+               float d1 = texture2D(uDetailTex, vTUv * vec2(220.0, 124.0)).r;
+               float d2 = texture2D(uDetailTex, vTUv * vec2(61.0, 34.0) + 0.37).r;
+               float grain = (d1 - 0.5) * 0.55 + (d2 - 0.5) * 0.45;
+               c *= 1.0 + grain * 0.48 * detailAmt;
+               // a touch of warmth in the hollows, so it is not pure luminance
+               c.rg += vec2(0.018, 0.008) * grain * detailAmt;
+             }
 
              // drifting cloud shadows
              float cs1 = texture2D(uCloudTex, vTUv * 9.0 + uTime * vec2(0.010, 0.004)).r;

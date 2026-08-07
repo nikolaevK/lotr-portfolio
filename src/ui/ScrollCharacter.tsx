@@ -1,26 +1,47 @@
 "use client";
 
-import { Component, Suspense, useMemo, useRef, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import * as THREE from "three";
 import type { Group } from "three";
 import { normalizeToHeight } from "@/three/modelUtils";
+import { buildCharacter, characterFor } from "@/three/characters";
+import { disposeGroup } from "@/three/kit";
 import type { CharacterInfo } from "@/state/content";
 
 /**
- * A character niche inside a scroll: renders the GLB on a slow turntable when
- * `modelUrl` is set, otherwise an inked placeholder portrait — so scrolls are
- * already laid out for the 3D characters as models get added via the admin.
+ * A character niche inside a scroll: a slow turntable when `modelUrl` is set,
+ * otherwise an inked placeholder portrait. Known names build the procedural
+ * kit figure (characters.ts); anything else still loads as a GLB, so
+ * admin-uploaded models keep working.
  */
 
 function Turntable({ url, scale }: { url: string; scale: number }) {
   const gltf = useLoader(GLTFLoader, url);
   const ref = useRef<Group>(null);
-  // clone: the cached scene object may simultaneously stand in the 3D world
-  // (Figures.tsx), and an Object3D can only live in one scene graph
+  // clone: the cached scene object could be shared with another niche
   const scene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
   // fit any source model into the niche; DB `scale` is an artistic multiplier
   const fit = useMemo(() => normalizeToHeight(scene, 1.9), [scene]);
+  useFrame((_, dt) => {
+    if (ref.current) ref.current.rotation.y += dt * 0.55;
+  });
+  return (
+    <group ref={ref} position={[0, -0.95, 0]} scale={scale}>
+      <group scale={fit.scale} position={fit.offset}>
+        <primitive object={scene} />
+      </group>
+    </group>
+  );
+}
+
+function ProceduralTurntable({ name, scale }: { name: string; scale: number }) {
+  const scene = useMemo(() => buildCharacter(name)!, [name]);
+  useEffect(() => () => disposeGroup(scene), [scene]);
+  const fit = useMemo(() => normalizeToHeight(scene, 1.9), [scene]);
+  const ref = useRef<Group>(null);
   useFrame((_, dt) => {
     if (ref.current) ref.current.rotation.y += dt * 0.55;
   });
@@ -60,6 +81,7 @@ function InkedFigure() {
 }
 
 export function CharacterNiche({ c, glyph }: { c: CharacterInfo; glyph: string }) {
+  const proc = c.modelUrl ? characterFor(c.modelUrl) : null;
   const placeholder = (
     <div
       style={{
@@ -100,12 +122,29 @@ export function CharacterNiche({ c, glyph }: { c: CharacterInfo; glyph: string }
               camera={{ position: [0, 0.05, 2.85], fov: 38 }}
               gl={{ antialias: true, alpha: true, powerPreference: "low-power" }}
               style={{ width: "100%", height: "100%" }}
+              onCreated={({ gl, scene }) => {
+                // the figures wear real metals and normal maps; give them a
+                // small neutral probe to reflect (the world has SkyEnvironment)
+                const pmrem = new THREE.PMREMGenerator(gl);
+                const room = new RoomEnvironment();
+                scene.environment = pmrem.fromScene(room, 0.05).texture;
+                scene.environmentIntensity = 0.5;
+                room.traverse((o) => {
+                  const m = o as THREE.Mesh;
+                  if (m.isMesh) m.geometry.dispose();
+                });
+                pmrem.dispose();
+              }}
             >
-              <ambientLight intensity={0.95} />
+              <ambientLight intensity={0.6} />
               <directionalLight position={[2.5, 4, 3]} intensity={1.5} color="#fff2d8" />
               <directionalLight position={[-3, 2, -2]} intensity={0.5} color="#c9b586" />
               <Suspense fallback={null}>
-                <Turntable url={c.modelUrl} scale={c.scale} />
+                {proc ? (
+                  <ProceduralTurntable name={proc} scale={c.scale} />
+                ) : (
+                  <Turntable url={c.modelUrl} scale={c.scale} />
+                )}
               </Suspense>
             </Canvas>
           </ModelBoundary>

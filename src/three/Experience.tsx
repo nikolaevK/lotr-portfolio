@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
-import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
+import { EffectComposer, Bloom, Vignette, N8AO } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { MAP_W, MAP_H } from "@/data/content";
 import { useGame } from "@/state/store";
@@ -25,6 +25,7 @@ import { LostPages } from "@/three/LostPages";
 import { FireBreath } from "@/three/FireBreath";
 import { VoiceTriggers } from "@/three/VoiceTriggers";
 import { MapExplore } from "@/three/MapExplore";
+import { SkyEnvironment } from "@/three/SkyEnvironment";
 
 export function Experience() {
   const quality = useGame((s) => s.quality);
@@ -47,7 +48,10 @@ export function Experience() {
       }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.08;
+        gl.toneMappingExposure = 1.05;
+        // soft shadows cost one extra tap set but hide the stair-stepping that
+        // a 2048 map shows on the long silhouettes of walls and wings
+        gl.shadowMap.type = THREE.PCFSoftShadowMap;
       }}
       // touchAction none: iOS ignores user-scalable=no, so without this a
       // two-finger map pinch starts native page zoom and cancels our pointers
@@ -55,6 +59,7 @@ export function Experience() {
     >
       <Suspense fallback={null}>
         <SkyDome />
+        <SkyEnvironment />
         <Weather />
         <Terrain />
         <Clouds />
@@ -74,7 +79,10 @@ export function Experience() {
         <CameraRig />
         {quality === "high" && (
           <EffectComposer multisampling={4}>
-            <Bloom luminanceThreshold={1.0} mipmapBlur intensity={0.65} />
+            {/* contact shading in the streets, under eaves and inside the
+                gate-arches — half-res keeps it around a millisecond */}
+            <N8AO halfRes aoRadius={5} distanceFalloff={0.6} intensity={2.2} quality="low" color="#241b12" />
+            <Bloom luminanceThreshold={0.92} mipmapBlur intensity={0.6} radius={0.7} />
             <Vignette eskil={false} offset={0.22} darkness={0.58} />
           </EffectComposer>
         )}

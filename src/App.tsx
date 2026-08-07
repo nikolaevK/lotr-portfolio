@@ -53,15 +53,17 @@ export default function App() {
     });
     // tiny debug/demo hook: __lotr.teleport(u, v, heading?) in map fractions
     (window as unknown as { __lotr?: object }).__lotr = {
-      teleport: (u: number, v: number, heading?: number) => {
+      teleport: (u: number, v: number, heading?: number, altitude?: number) => {
         runtime.pos.x = u * MAP_W;
         runtime.pos.z = v * MAP_H;
         runtime.vel.set(0, 0, 0);
         runtime.autoTarget = null;
         if (typeof heading === "number") runtime.heading = heading;
+        if (typeof altitude === "number") runtime.pos.y = altitude;
       },
       state: () => ({
         x: runtime.pos.x,
+        y: runtime.pos.y,
         z: runtime.pos.z,
         heading: runtime.heading,
         speed: runtime.speed,
