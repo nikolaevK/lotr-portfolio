@@ -4,9 +4,41 @@ import { content } from "@/state/content";
 import { solidAt } from "@/three/obstacles";
 import { runtime } from "@/game/runtime";
 import { input, moveAxes } from "@/input/controls";
-import { game } from "@/state/store";
+import { game, type GameState } from "@/state/store";
 import { morph } from "@/three/Terrain";
 import { audio } from "@/audio/engine";
+
+/**
+ * The steed holds still while anything else has the stage: the cover, a tale,
+ * the raven, the codex, a trial picker, photo mode, a cinematic — or while the
+ * map is still rising.
+ */
+export function steedFrozen(s: GameState) {
+  return (
+    s.phase !== "map" || !!s.region || s.contactOpen || s.codexOpen || s.trialsOpen ||
+    s.photoMode || s.cinematic !== null || morph.value < 0.55
+  );
+}
+
+/**
+ * The clearance line the steed rides: the highest solid ground over the
+ * stretch ahead (longer at speed), each sample relaxed by its distance so a
+ * ridge is climbed for early and gently. trials.ts hangs its rings by it.
+ */
+export function envelopeAt(x: number, z: number, hx: number, hz: number, speed01: number) {
+  const ahead = 30 + speed01 * 90;
+  let env = Math.max(solidAt(x, z), SEA_LEVEL);
+  for (let i = 1; i <= 6; i++) {
+    const d = (ahead * i) / 6;
+    const g = solidAt(THREE.MathUtils.clamp(x + hx * d, 0, MAP_W), THREE.MathUtils.clamp(z + hz * d, 0, MAP_H));
+    env = Math.max(env, Math.max(g, SEA_LEVEL) - d * 0.11);
+  }
+  return env;
+}
+
+/** The altitude spring's rate: stiffer the further below its line the steed is (a crag face). */
+export const springRate = (below: number, response: number) =>
+  response * 2 * (1 + THREE.MathUtils.clamp((below - 8) / 22, 0, 1.6));
 
 const OPEN_R = 140; // region proximity that opens a tale (concept: 140 px)
 const RELEASE_R = 200;
@@ -213,24 +245,14 @@ export function stepFlight(dt: number, frozen: boolean, t: FlightTuning, fs: Fli
   const spdNow = Math.hypot(runtime.vel.x, runtime.vel.z);
   const hx = spdNow > 2 ? runtime.vel.x / spdNow : Math.cos(runtime.heading);
   const hz = spdNow > 2 ? runtime.vel.z / spdNow : Math.sin(runtime.heading);
-  const ahead = 30 + fs.speed01 * 90;
   const gHere = Math.max(solidAt(runtime.pos.x, runtime.pos.z), SEA_LEVEL);
-  let env = gHere;
-  for (let i = 1; i <= 6; i++) {
-    const d = (ahead * i) / 6;
-    const g = solidAt(
-      THREE.MathUtils.clamp(runtime.pos.x + hx * d, 0, MAP_W),
-      THREE.MathUtils.clamp(runtime.pos.z + hz * d, 0, MAP_H),
-    );
-    env = Math.max(env, Math.max(g, SEA_LEVEL) - d * 0.11);
-  }
-  const ground = env * morph.value;
+  const ground = envelopeAt(runtime.pos.x, runtime.pos.z, hx, hz, fs.speed01) * morph.value;
   const bob = Math.sin(performance.now() * 0.0011) * (t.bobAmp - fs.speed01 * t.bobAmp * 0.5);
   const targetY = ground + t.hover + fs.speed01 * t.hoverSpeedLift + bob;
   // critically damped spring: smooth climbs and settles, no overshoot — and
   // stiffer the further below its line the steed finds itself (a crag face)
   const below = targetY - runtime.pos.y;
-  const w = t.altResponse * 2 * (1 + THREE.MathUtils.clamp((below - 8) / 22, 0, 1.6));
+  const w = springRate(below, t.altResponse);
   fs.vy += (w * w * below - 2 * w * fs.vy) * dt;
   fs.vy = THREE.MathUtils.clamp(fs.vy, -80, 120);
   runtime.pos.y += fs.vy * dt;
@@ -256,15 +278,18 @@ export function stepFlight(dt: number, frozen: boolean, t: FlightTuning, fs: Fli
     THREE.MathUtils.clamp(vy * 0.025, -0.42, 0.46) - fs.speed01 * t.speedLean;
   runtime.pitch += (pitchTarget - runtime.pitch) * Math.min(1, 4 * dt);
 
-  // ── region proximity (opens tales, as in the concept) ──
-  if (!frozen) {
+  // ── region proximity (opens tales, as in the concept) — not mid-trial,
+  // where a scroll would stop the clock and the steed ──
+  if (!frozen && !s.activeTrial) {
     for (const r of content().regions) {
       const d = Math.hypot(toWorldX(r.x) - runtime.pos.x, toWorldZ(r.y) - runtime.pos.z);
       if (runtime.cooldown === r.id) {
         if (d > RELEASE_R) runtime.cooldown = null;
         continue;
       }
-      if (runtime.autoTarget?.id && runtime.autoTarget.id !== r.id) continue;
+      // on autopilot only the destination opens — a trip to a page or beacon
+      // must not be cut short by every visited land it passes over
+      if (runtime.autoTarget && runtime.autoTarget.id !== r.id) continue;
       if (d < OPEN_R) {
         runtime.autoTarget = null;
         runtime.cooldown = r.id;

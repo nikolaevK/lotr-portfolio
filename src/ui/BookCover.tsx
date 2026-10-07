@@ -50,6 +50,7 @@ export function BookCover() {
   const visitedCount = useGame((s) => Object.keys(s.visited).length);
   const mount = useGame((s) => s.mount);
   const setMount = useGame((s) => s.setMount);
+  const setCodex = useGame((s) => s.setCodex);
 
   // The book is laid out at its full 580px height and scaled to fit a short
   // screen. Clamping its height instead (as it was) clipped the title page on
@@ -57,6 +58,8 @@ export function BookCover() {
   // A narrow portrait phone wraps the title page taller than that, so the
   // book also grows to hold it (its words plus 2×40 padding and the border).
   const content = useRef<HTMLDivElement>(null);
+  const cover = useRef<HTMLDivElement>(null);
+  const titlePage = useRef<HTMLDivElement>(null);
   const [bookH, setBookH] = useState(580);
   const [fit, setFit] = useState(1);
   const [isTouch, setIsTouch] = useState(false);
@@ -78,6 +81,12 @@ export function BookCover() {
     };
   }, []);
 
+  // opened from the keyboard: the cover button turns away, so focus follows
+  // onto the title page it revealed
+  useEffect(() => {
+    if (coverOpened && document.activeElement === cover.current) titlePage.current?.focus({ preventScroll: true });
+  }, [coverOpened]);
+
   const embers = useMemo(
     () =>
       Array.from({ length: 14 }, (_, i) => ({
@@ -96,6 +105,7 @@ export function BookCover() {
     return (
       <button
         onClick={() => setMount(id)}
+        aria-pressed={active}
         className="cinzel hud-btn"
         style={{
           padding: "9px 14px",
@@ -127,6 +137,8 @@ export function BookCover() {
 
   return (
     <div
+      // fading out once the journey begins: no second press of BEGIN from the keyboard
+      inert={phase === "map"}
       style={{
         position: "absolute",
         inset: 0,
@@ -143,6 +155,7 @@ export function BookCover() {
       {embers.map((e, i) => (
         <div
           key={i}
+          className="cover-ember"
           style={{
             position: "absolute",
             left: `${e.left}%`,
@@ -167,8 +180,13 @@ export function BookCover() {
           transform: fit < 1 ? `scale(${fit})` : undefined,
         }}
       >
-        {/* title page beneath the cover, atop the book block */}
+        {/* title page beneath the cover, atop the book block — inert until the
+            cover opens, so Tab can't wander onto buttons hidden under it */}
         <div
+          ref={titlePage}
+          tabIndex={-1}
+          inert={!coverOpened}
+          className="on-parchment"
           style={{
             position: "absolute",
             inset: 0,
@@ -216,19 +234,19 @@ export function BookCover() {
             <div className="cinzel" style={{ fontSize: 13, letterSpacing: ".3em", color: "#8a6420" }}>
               HEREIN ARE RECORDED
             </div>
-            <div className="cinzel" style={{ fontWeight: 900, fontSize: 33, lineHeight: 1.22, margin: "14px 0 10px" }}>
+            <h1 className="cinzel" style={{ fontWeight: 900, fontSize: 33, lineHeight: 1.22, margin: "14px 0 10px" }}>
               The Deeds of
               <br />
               Konstantin Nikolaev
-            </div>
+            </h1>
             <div style={{ ...goldRule, width: 190, margin: "0 auto 12px" }} />
             <div className="fell" style={{ fontSize: 18, fontStyle: "italic", color: "#6d5a33", maxWidth: 310, margin: "0 auto" }}>
               Builder of white cities, tamer of lightning, student of elven-lore — full-stack engineer of Sherman Oaks
             </div>
-            <div className="cinzel" style={{ margin: "20px 0 8px", fontSize: 12, letterSpacing: ".26em", color: "#8a6420" }}>
+            <div id="steed-label" className="cinzel" style={{ margin: "20px 0 8px", fontSize: 12, letterSpacing: ".26em", color: "#8a6420" }}>
               CHOOSE YOUR STEED
             </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            <div role="group" aria-labelledby="steed-label" style={{ display: "flex", gap: 10, justifyContent: "center" }}>
               {steedBtn("dragon", "THE DRAGON", "fire & fury")}
               {steedBtn("eagle", "THE GREAT EAGLE", "swift as the wind")}
             </div>
@@ -269,11 +287,41 @@ export function BookCover() {
             >
               {!ready ? "THE MAP IS BEING DRAWN…" : visitedCount > 0 ? "CONTINUE THE JOURNEY" : "BEGIN THE JOURNEY"}
             </button>
+            {/* for the reader in a hurry: every chapter, no flight required */}
+            <div style={{ marginTop: 12 }}>
+              <button
+                onClick={() => setCodex(true)}
+                className="fell"
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 4,
+                  color: "#6d5a33",
+                  fontSize: 16,
+                  fontStyle: "italic",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 3,
+                  cursor: "pointer",
+                }}
+              >
+                or read every chapter in the Red Book
+              </button>
+            </div>
           </div>
         </div>
-        {/* front cover */}
+        {/* front cover — a button until it swings open */}
         <div
+          ref={cover}
           onClick={openCover}
+          role="button"
+          tabIndex={coverOpened ? -1 : 0}
+          aria-label="There and Back Again — open the book"
+          aria-hidden={coverOpened || undefined}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            openCover();
+          }}
           style={{
             position: "absolute",
             inset: 0,

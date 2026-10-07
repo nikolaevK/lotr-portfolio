@@ -5,7 +5,7 @@
  * Ported from the 2D concept (pad chords, wind, per-zone lowpass, sfx) and
  * expanded with wing whooshes, dragon-fire roar and thunder.
  */
-type Sfx = "chime" | "open" | "rumble" | "tick" | "collect";
+type Sfx = "chime" | "open" | "rumble" | "tick" | "collect" | "shutter";
 
 // Open-fifth drones (root, fifth, octave, twelfth) — modal, never clashing
 const PAD_CHORDS: [number, number, number, number][] = [
@@ -326,6 +326,15 @@ class AudioEngine {
       o.frequency.exponentialRampToValueAtTime(34, t + 1.2);
       g.gain.setValueAtTime(0.22, t);
       g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+    } else if (kind === "shutter") {
+      // a camera's double click: the shutter opening, then closing
+      o.type = "square";
+      o.frequency.setValueAtTime(1900, t);
+      o.frequency.exponentialRampToValueAtTime(700, t + 0.12);
+      g.gain.setValueAtTime(0.05, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+      g.gain.setValueAtTime(0.04, t + 0.08);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
     } else if (kind === "collect") {
       o.type = "sine";
       o.frequency.setValueAtTime(520, t);

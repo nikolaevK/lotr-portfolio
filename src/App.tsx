@@ -22,10 +22,25 @@ export default function App() {
     const offK = attachKeyboard({
       onEscape: () => escape(),
       onOverview: () => {
-        if (useGame.getState().phase === "map") toggleOverview();
+        const g = useGame.getState();
+        if (g.phase === "map" && !g.cinematic) toggleOverview();
       },
       onAnyMove: () => {
-        runtime.autoTarget = null;
+        // steering takes the reins from the autopilot — but in photo mode the
+        // keys move the camera, and the journey resumes after
+        if (!useGame.getState().photoMode) runtime.autoTarget = null;
+      },
+      onToggle: (k) => {
+        const g = useGame.getState();
+        if (g.cinematic) return;
+        // the Red Book opens from the cover too — no flight needed to read it
+        if (k === "b") return g.setCodex(!g.codexOpen);
+        if (g.phase !== "map") return;
+        // not over an open tale or the raven's letter — Esc those first
+        if ((k === "p" || k === "t") && (g.region || g.contactOpen || g.codexOpen || g.trialsOpen)) return;
+        if (k === "p") g.setPhotoMode(!g.photoMode);
+        else if (k === "t" && !g.activeTrial) g.setTrialsOpen(!g.trialsOpen);
+        else if (k === "g") g.toggleGuide();
       },
     });
     const offM = attachMouse();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { runtime } from "@/game/runtime";
@@ -252,6 +252,8 @@ export function Plume({
     });
     return { geo: g, mat: m };
   }, [count, spread, height, size, color, additive, opacity, rise]);
+  // passed in as props, so R3F won't dispose them for us
+  useEffect(() => () => { geo.dispose(); mat.dispose(); }, [geo, mat]);
 
   useFrame((_, dt) => {
     mat.uniforms.uTime.value += Math.min(dt, 0.05);

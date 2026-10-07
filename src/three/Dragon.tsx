@@ -8,9 +8,10 @@ import { input } from "@/input/controls";
 import { game } from "@/state/store";
 import { morph } from "@/three/Terrain";
 import { audio } from "@/audio/engine";
-import { createFlightState, stepFlight, DRAGON_TUNING } from "@/three/flight";
+import { createFlightState, stepFlight, steedFrozen, DRAGON_TUNING } from "@/three/flight";
 import { heightToNormal, heightToRoughness } from "@/three/materials";
 import { mergeRigid, skinRigid } from "@/three/mergeRig";
+import { daylight } from "@/three/daylight";
 
 // ── palette (from the 2D concept) ────────────────────────────────────────────
 const RED = new THREE.Color("#96201d");
@@ -20,6 +21,8 @@ const TEAL = new THREE.Color("#3d5a52");
 const HORN = new THREE.Color("#42625a");
 const HORN_D = new THREE.Color("#2c443d");
 const CLAW = new THREE.Color("#d8c9a8");
+/** how much daylight shines through the wing membranes (0.3 at night) */
+const membraneDaylit = { value: 1 };
 
 // Spine rest curve, tail tip → head base (model space, +X forward, Y up)
 const SPINE: [number, number][] = [
@@ -166,14 +169,18 @@ function buildDragon(): Rig {
     opacity: 0.96,
   });
   // Backlit skin: the membrane is thin, so grazing angles should bleed light
-  // through it instead of going flat black against the sky.
+  // through it instead of going flat black against the sky — sunlight through
+  // it, so it dims at night (uDaylit) instead of glowing salmon in the dark.
   membraneMat.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <emissivemap_fragment>",
-      `#include <emissivemap_fragment>
-       float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 2.4);
-       totalEmissiveRadiance += vec3(1.0, 0.36, 0.16) * rim * 0.9;`,
-    );
+    shader.uniforms.uDaylit = membraneDaylit;
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform float uDaylit;")
+      .replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>
+         float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 2.4);
+         totalEmissiveRadiance = (totalEmissiveRadiance + vec3(1.0, 0.36, 0.16) * rim * 0.9) * uDaylit;`,
+      );
   };
   const crestMat = new THREE.MeshStandardMaterial({
     color: HORN_D,
@@ -734,8 +741,9 @@ export function Dragon() {
     const dt = Math.min(dtRaw, 0.05);
     const s = game();
     const a = anim.current;
+    membraneDaylit.value = 0.3 + 0.7 * daylight.day;
     const fs = flight.current;
-    const frozen = s.phase !== "map" || !!s.region || s.contactOpen || morph.value < 0.55;
+    const frozen = steedFrozen(s);
 
     // ── shared flight dynamics (rider controls, altitude, bank, regions) ──
     stepFlight(dt, frozen, DRAGON_TUNING, fs);

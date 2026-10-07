@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useContent, xpEarned, xpMax } from "@/state/content";
 import { useGame } from "@/state/store";
@@ -95,12 +95,48 @@ const CURSOR_ICONS: { id: string; title: string; icon: React.ReactNode }[] = [
   },
 ];
 
+const ICON = { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "#e2c682", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+
+/** An open book — the Red Book codex. */
+const BookIcon = () => (
+  <svg {...ICON} aria-hidden>
+    <path d="M12 6.5C10 5 7 4.6 3.5 5v13c3.5-.4 6.5 0 8.5 1.5 2-1.5 5-1.9 8.5-1.5V5C17 4.6 14 5 12 6.5z" />
+    <path d="M12 6.5v13" />
+  </svg>
+);
+
+/** A gate ring with a flight line through it — the flight trials. */
+const TrialIcon = () => (
+  <svg {...ICON} aria-hidden>
+    <ellipse cx="13" cy="12" rx="5" ry="8" />
+    <path d="M2 14.5l8-1.5M16.5 10.5L22 9.5" />
+  </svg>
+);
+
+/** A compass rose — the quest guide. */
+const CompassIcon = () => (
+  <svg {...ICON} aria-hidden>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 5.5l2 6.5-2 6.5-2-6.5z" />
+  </svg>
+);
+
+/** A camera — photo mode. */
+const CameraIcon = () => (
+  <svg {...ICON} aria-hidden>
+    <path d="M3.5 8h4l1.5-2.5h6L16.5 8h4v11h-17z" />
+    <circle cx="12" cy="13" r="3.5" />
+  </svg>
+);
+
 /** The cursor picker — a row of five, or (on narrower screens) the active one
  *  with the rest in a drop-down, so the top bar never has to wrap. */
 function CursorPicker({ folded }: { folded: boolean }) {
   const cursor = useGame((s) => s.cursor);
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const listId = useId();
   // a drop-down: any press elsewhere closes it, and unfolding resets it
   useEffect(() => {
     if (!open) return;
@@ -116,7 +152,7 @@ function CursorPicker({ folded }: { folded: boolean }) {
   };
   if (!folded) {
     return (
-      <div style={box}>
+      <div style={box} role="group" aria-label="Choose your cursor">
         {CURSOR_ICONS.map((c) => (
           <CursorButton key={c.id} id={c.id} title={c.title}>{c.icon}</CursorButton>
         ))}
@@ -125,12 +161,39 @@ function CursorPicker({ folded }: { folded: boolean }) {
   }
   const active = CURSOR_ICONS.find((c) => c.id === cursor) ?? CURSOR_ICONS[2];
   return (
-    <div ref={root} style={{ position: "relative" }}>
+    <div
+      ref={root}
+      style={{ position: "relative" }}
+      // Esc folds the drop-down and hands focus back to its trigger
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open) {
+          setOpen(false);
+          trigger.current?.focus();
+        }
+      }}
+    >
       <div style={box} onClick={() => setOpen(!open)} title="Choose your cursor">
-        <CursorButton id={active.id} title={active.title}>{active.icon}</CursorButton>
+        <CursorButton
+          ref={trigger}
+          id={active.id}
+          title={active.title}
+          // a disclosure, not a menu: the drop-down is a row of plain buttons
+          trigger={{ "aria-label": `Choose your cursor — current: ${active.title}`, "aria-expanded": open, "aria-controls": listId }}
+        >
+          {active.icon}
+        </CursorButton>
       </div>
       {open && (
-        <div style={{ ...box, position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 2 }} onClick={() => setOpen(false)}>
+        <div
+          id={listId}
+          role="group"
+          aria-label="Cursors"
+          style={{ ...box, position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 2 }}
+          onClick={() => {
+            setOpen(false);
+            trigger.current?.focus(); // a keyboard choice lands back on the trigger
+          }}
+        >
           {CURSOR_ICONS.map((c) => (
             <CursorButton key={c.id} id={c.id} title={c.title}>{c.icon}</CursorButton>
           ))}
@@ -140,14 +203,29 @@ function CursorPicker({ folded }: { folded: boolean }) {
   );
 }
 
-function CursorButton({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
+function CursorButton({
+  id,
+  title,
+  trigger,
+  ref,
+  children,
+}: {
+  id: string;
+  title: string;
+  /** set on the folded picker's trigger, which opens the drop-down rather than choosing */
+  trigger?: { "aria-label": string; "aria-expanded": boolean; "aria-controls": string };
+  ref?: React.Ref<HTMLButtonElement>;
+  children: React.ReactNode;
+}) {
   const cursor = useGame((s) => s.cursor);
   const setCursor = useGame((s) => s.setCursor);
   const active = cursor === id;
   return (
     <button
+      ref={ref}
       onClick={() => setCursor(id)}
       title={title}
+      {...(trigger ?? { "aria-label": title, "aria-pressed": active })}
       style={{
         width: 34,
         height: 34,
@@ -177,7 +255,9 @@ export function Hud() {
       caption: st.caption, voiceCaption: st.voiceCaption,
       toggleQuest: st.toggleQuest, toggleTone: st.toggleTone, setMount: st.setMount,
       toggleOverview: st.toggleOverview, toggleQuality: st.toggleQuality,
-      toggleMute: st.toggleMute, setContact: st.setContact,
+      toggleMute: st.toggleMute, setContact: st.setContact, questOpen: st.questOpen,
+      setCodex: st.setCodex, setTrialsOpen: st.setTrialsOpen, setPhotoMode: st.setPhotoMode,
+      guide: st.guide, toggleGuide: st.toggleGuide, activeTrial: st.activeTrial,
     })),
   );
   const [isTouch] = useState(() => typeof window !== "undefined" && matchMedia("(pointer: coarse)").matches);
@@ -188,21 +268,28 @@ export function Hud() {
   const [compact, setCompact] = useState(false);
   // laptop widths: the full bar, tightened, with the cursor picker folded
   const [medium, setMedium] = useState(false);
+  // the narrowest phones (≤380 px) can't fit the book beside the quest log:
+  // it moves to the top of the ⋯ menu
+  const [narrow, setNarrow] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     const mq = matchMedia("(max-width: 760px), (pointer: coarse) and (max-height: 520px)");
     const mm = matchMedia("(max-width: 1359px)");
+    const mn = matchMedia("(max-width: 380px)");
     const upd = () => {
       setCompact(mq.matches);
       setMedium(mm.matches && !mq.matches);
+      setNarrow(mn.matches);
     };
     upd();
     mq.addEventListener("change", upd);
     mm.addEventListener("change", upd);
+    mn.addEventListener("change", upd);
     return () => {
       mq.removeEventListener("change", upd);
       mm.removeEventListener("change", upd);
+      mn.removeEventListener("change", upd);
     };
   }, []);
   // the keyboard hint bar makes no sense on touch/phones — teach the map
@@ -253,20 +340,48 @@ export function Hud() {
             <button
               onClick={s.toggleQuest}
               title="Quest log"
+              aria-label={`Quest log — ${count} of ${c.regions.length} lands charted`}
+              aria-haspopup="dialog"
+              aria-expanded={s.questOpen}
               className="cinzel hud-btn"
               style={compact ? compactBtn : { ...btnStyle, display: "flex", alignItems: "center", gap: 10, fontSize: 14, letterSpacing: ".1em", padding: "10px 16px", whiteSpace: "nowrap" }}
             >
-              <span style={{ display: "inline-block", width: 10, height: 10, background: "#c9963c", transform: "rotate(45deg)", flex: "none" }} />
+              <span aria-hidden style={{ display: "inline-block", width: 10, height: 10, background: "#c9963c", transform: "rotate(45deg)", flex: "none" }} />
               {compact ? `${count}/${c.regions.length}` : `QUEST LOG · ${count} / ${c.regions.length}`}
             </button>
+            {compact && !narrow && (
+              <button onClick={() => s.setCodex(true)} className="cinzel hud-btn" style={{ ...compactBtn, width: 44, padding: 0 }} title="The Red Book" aria-label="The Red Book">
+                <BookIcon />
+              </button>
+            )}
             {compact && (
-              <button onClick={() => setStatsOpen(!statsOpen)} className="cinzel hud-btn" style={{ ...compactBtn, width: 44, padding: 0 }} title="Progress">
+              <button
+                onClick={() => setStatsOpen(!statsOpen)}
+                className="cinzel hud-btn"
+                style={{ ...compactBtn, width: 44, padding: 0 }}
+                title="Progress"
+                aria-label="Progress"
+                aria-expanded={statsOpen}
+              >
                 {statsOpen ? "▲" : "▼"}
               </button>
             )}
           </div>
+          {/* the fast path: every chapter as a book, for readers in a hurry */}
+          {!compact && (
+            <button
+              onClick={() => s.setCodex(true)}
+              className="cinzel hud-btn"
+              title="Read every chapter as a book (B)"
+              style={{ ...btnStyle, display: "flex", alignItems: "center", gap: 9, fontSize: 13, letterSpacing: ".12em", padding: "8px 14px", whiteSpace: "nowrap", alignSelf: "flex-start" }}
+            >
+              <BookIcon />
+              THE RED BOOK
+            </button>
+          )}
           {(!compact || statsOpen) && (
-            <>
+            // phones: one opaque panel, or the guide's ribbon shows through the chips
+            <div style={compact ? { display: "flex", flexDirection: "column", gap: 8, background: "rgba(14,9,4,.95)", border: "1px solid #4a3a18", padding: 8, borderRadius: 2 } : { display: "contents" }}>
           {c.titles.length > 0 && (
             <div style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "5px 12px", fontSize: 14, fontStyle: "italic", color: "#b8a678", borderRadius: 2 }}>
               {c.titles[Math.min(count, c.titles.length - 1)]}
@@ -296,7 +411,7 @@ export function Hud() {
               BEACONS {beaconsN}/{c.beacons.length}
             </div>
           </div>
-            </>
+            </div>
           )}
         </div>
 
@@ -310,10 +425,19 @@ export function Hud() {
                 onClick={() => s.setContact(true)}
                 className="cinzel hud-btn"
                 style={{ ...compactBtn, background: "#3d2b10", border: "1px solid #c9963c", color: "#ecd9a0" }}
+                aria-label="Send a raven"
+                aria-haspopup="dialog"
               >
                 RAVEN
               </button>
-              <button onClick={() => setMoreOpen(!moreOpen)} className="cinzel hud-btn" style={{ ...compactBtn, width: 44, padding: 0, fontSize: 15 }} title="More">
+              <button
+                onClick={() => setMoreOpen(!moreOpen)}
+                className="cinzel hud-btn"
+                style={{ ...compactBtn, width: 44, padding: 0, fontSize: 15 }}
+                title="More"
+                aria-label="More"
+                aria-expanded={moreOpen}
+              >
                 {moreOpen ? "✕" : "⋯"}
               </button>
             </>
@@ -328,6 +452,11 @@ export function Hud() {
                   : { display: "contents" }
               }
             >
+          {compact && narrow && (
+            <button onClick={() => { setMoreOpen(false); s.setCodex(true); }} className="cinzel hud-btn" style={bar}>
+              THE RED BOOK
+            </button>
+          )}
           <CursorPicker folded={medium} />
           <button onClick={s.toggleTone} className="cinzel hud-btn" style={bar}>
             {s.tone === "common" ? "COMMON TONGUE" : "ELVISH MODE"}
@@ -335,8 +464,9 @@ export function Hud() {
           <button
             onClick={() => s.setMount(s.mount === "dragon" ? "eagle" : "dragon")}
             className="cinzel hud-btn"
-            style={bar}
-            title="Change your steed"
+            style={s.activeTrial ? { ...bar, opacity: 0.5, cursor: "not-allowed" } : bar}
+            disabled={!!s.activeTrial}
+            title={s.activeTrial ? "A course is flown on the steed it began with" : "Change your steed"}
           >
             STEED: {s.mount === "dragon" ? "DRAGON" : "EAGLE"}
           </button>
@@ -345,6 +475,43 @@ export function Hud() {
               {s.overview ? "RIDE ON" : "MAP VIEW"}
             </button>
           )}
+          {/* trials and photo mode: icons on a desktop bar, words in the phone menu */}
+          <button
+            onClick={() => {
+              setMoreOpen(false); // the phone menu would cover the trial's timer
+              s.setTrialsOpen(true);
+            }}
+            className="cinzel hud-btn"
+            style={compact ? bar : { ...bar, display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 8px" }}
+            title="Flight trials (T)"
+            aria-label="Flight trials"
+          >
+            {compact ? "FLIGHT TRIALS" : <TrialIcon />}
+          </button>
+          <button
+            onClick={() => {
+              setMoreOpen(false);
+              s.setPhotoMode(true);
+            }}
+            className="cinzel hud-btn"
+            style={compact ? bar : { ...bar, display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 8px" }}
+            title="Photo mode (P)"
+            aria-label="Photo mode"
+          >
+            {compact ? "PHOTO MODE" : <CameraIcon />}
+          </button>
+          {/* once the guide's × has closed it, this brings it back (tablets and
+              phones have no G key) */}
+          <button
+            onClick={s.toggleGuide}
+            className="cinzel hud-btn"
+            style={compact ? bar : { ...bar, display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 8px", opacity: s.guide ? 1 : 0.6 }}
+            title={`Quest guide: ${s.guide ? "on" : "off"} (G)`}
+            aria-label="Quest guide"
+            aria-pressed={s.guide}
+          >
+            {compact ? `GUIDE: ${s.guide ? "ON" : "OFF"}` : <CompassIcon />}
+          </button>
           <button onClick={s.toggleQuality} className="cinzel hud-btn" style={bar} title="Render quality">
             DETAIL: {s.quality === "high" ? "HIGH" : "LOW"}
           </button>
@@ -355,6 +522,7 @@ export function Hud() {
             <button
               onClick={() => s.setContact(true)}
               className="cinzel hud-btn"
+              aria-haspopup="dialog"
               style={{ ...bar, background: "#3d2b10", border: "1px solid #c9963c", color: "#ecd9a0", letterSpacing: ".08em", padding: medium ? "8px 10px" : "9px 16px" }}
             >
               SEND A RAVEN
@@ -456,7 +624,9 @@ export function Hud() {
               <b className="cinzel" style={{ color: "#e2c682" }}>W</b> soars ahead · <b className="cinzel" style={{ color: "#e2c682" }}>A D</b> wheel ·{" "}
               <b className="cinzel" style={{ color: "#e2c682" }}>S</b> eases up · <b className="cinzel" style={{ color: "#e2c682" }}>SHIFT</b> swifter ·{" "}
               <b className="cinzel" style={{ color: "#e2c682" }}>F</b> {s.mount === "dragon" ? "dragon-fire" : "eagle-cry"} ·{" "}
-              <b className="cinzel" style={{ color: "#e2c682" }}>M</b> map view · click a marker to travel · Esc closes
+              <b className="cinzel" style={{ color: "#e2c682" }}>M</b> map view · <b className="cinzel" style={{ color: "#e2c682" }}>B</b> red book ·{" "}
+              <b className="cinzel" style={{ color: "#e2c682" }}>T</b> trials · <b className="cinzel" style={{ color: "#e2c682" }}>P</b> photo ·{" "}
+              <b className="cinzel" style={{ color: "#e2c682" }}>G</b> guide · Esc closes
             </>
           )}
         </div>

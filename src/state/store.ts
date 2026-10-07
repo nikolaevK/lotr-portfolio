@@ -13,7 +13,7 @@ export interface Toast {
   msg: string;
 }
 
-interface GameState {
+export interface GameState {
   // journey phases
   phase: "cover" | "map";
   coverOpened: boolean;
@@ -53,6 +53,23 @@ interface GameState {
   // map-view hover tooltip (place under the cursor)
   mapHover: { title: string; text: string } | null;
 
+  // the Red Book codex: every chapter as a readable book, no flying needed
+  codexOpen: boolean;
+  // photo mode: free camera, HUD hidden, postcard capture
+  photoMode: boolean;
+  // a cinematic holds the camera and the steed (Cinematics.tsx plays it)
+  cinematic: "beacons" | "finale" | null;
+  finaleSeen: boolean;
+  // flight trials: the course picker, the course being flown, best times (s)
+  trialsOpen: boolean;
+  activeTrial: string | null;
+  /** bumped by every startTrial — flying the same course again restarts it */
+  trialRun: number;
+  /** best times (s), keyed `${courseId}:${mount}` — the eagle is the faster steed */
+  trialBest: Record<string, number>;
+  // the quest guide's objective tracker and bearing marker
+  guide: boolean;
+
   // actions
   setReady: () => void;
   openCover: () => void;
@@ -75,6 +92,15 @@ interface GameState {
   lightBeacon: (id: number) => void;
   escape: () => void;
   resetJourney: () => void;
+  setCodex: (open: boolean) => void;
+  setPhotoMode: (on: boolean) => void;
+  setCinematic: (id: "beacons" | "finale" | null) => void;
+  markFinaleSeen: () => void;
+  setTrialsOpen: (open: boolean) => void;
+  startTrial: (id: string) => void;
+  /** End the course; a finishing time (s) is kept if it beats the best. */
+  endTrial: (time: number | null) => void;
+  toggleGuide: () => void;
 }
 
 let toastSeq = 0;
@@ -110,6 +136,16 @@ export const useGame = create<GameState>()(
       caption: "",
       voiceCaption: null,
       mapHover: null,
+
+      codexOpen: false,
+      photoMode: false,
+      cinematic: null,
+      finaleSeen: false,
+      trialsOpen: false,
+      activeTrial: null,
+      trialRun: 0,
+      trialBest: {},
+      guide: true,
 
       setReady: () => set({ ready: true }),
 
@@ -214,7 +250,8 @@ export const useGame = create<GameState>()(
       setMapHover: (h) => set({ mapHover: h }),
 
       setMount: (m) => {
-        if (m === get().mount) return;
+        // a course is timed on the steed it started with
+        if (m === get().mount || get().activeTrial) return;
         audio.sfx("tick");
         set({ mount: m });
         if (get().phase === "map") {
@@ -277,8 +314,25 @@ export const useGame = create<GameState>()(
         }
       },
 
-      escape: () =>
-        set({ region: null, contactOpen: false, questOpen: false }),
+      // Esc backs out one layer: whatever is open over the flight first (a
+      // panel, photo mode, a cinematic — Cinematics.tsx releases the camera
+      // when it sees null); only with nothing open does it abandon a course
+      escape: () => {
+        const s = get();
+        const layered =
+          s.region || s.contactOpen || s.questOpen || s.codexOpen || s.photoMode || s.trialsOpen || s.cinematic;
+        if (layered)
+          set({
+            region: null,
+            contactOpen: false,
+            questOpen: false,
+            codexOpen: false,
+            photoMode: false,
+            trialsOpen: false,
+            cinematic: null,
+          });
+        else set({ activeTrial: null });
+      },
 
       resetJourney: () => {
         set({
@@ -294,8 +348,57 @@ export const useGame = create<GameState>()(
           weatherZone: "clear",
           caption: "",
           overview: false,
+          codexOpen: false,
+          photoMode: false,
+          cinematic: null,
+          finaleSeen: false,
+          trialsOpen: false,
+          activeTrial: null,
         });
       },
+
+      setCodex: (open) => {
+        if (open) audio.sfx("open");
+        set({ codexOpen: open, questOpen: false });
+      },
+
+      setPhotoMode: (on) => {
+        if (on && get().phase !== "map") return;
+        audio.sfx("tick");
+        set({ photoMode: on, questOpen: false, overview: false, mapHover: null });
+      },
+
+      // a cinematic takes the whole stage: every panel closes and a course in
+      // flight is abandoned (the beacon flight waits for one to end; a replay
+      // of the finale from the Red Book does not)
+      setCinematic: (id) =>
+        set({
+          cinematic: id,
+          ...(id
+            ? { region: null, questOpen: false, overview: false, photoMode: false, contactOpen: false, codexOpen: false, trialsOpen: false, activeTrial: null }
+            : {}),
+        }),
+      markFinaleSeen: () => set({ finaleSeen: true }),
+
+      setTrialsOpen: (open) => {
+        if (open) audio.sfx("open");
+        set({ trialsOpen: open, questOpen: false });
+      },
+
+      startTrial: (id) =>
+        set((s) => ({ activeTrial: id, trialRun: s.trialRun + 1, trialsOpen: false, region: null, overview: false })),
+
+      endTrial: (time) => {
+        const s = get();
+        if (!s.activeTrial) return;
+        const key = `${s.activeTrial}:${s.mount}`;
+        const best = s.trialBest[key];
+        if (time !== null && Number.isFinite(time) && time > 0 && (best === undefined || time < best)) {
+          set({ activeTrial: null, trialBest: { ...s.trialBest, [key]: time } });
+        } else set({ activeTrial: null });
+      },
+
+      toggleGuide: () => set((s) => ({ guide: !s.guide })),
     }),
     {
       name: "there-and-back-again-v1",
@@ -308,6 +411,9 @@ export const useGame = create<GameState>()(
         muted: s.muted,
         quality: s.quality,
         mount: s.mount,
+        finaleSeen: s.finaleSeen,
+        trialBest: s.trialBest,
+        guide: s.guide,
       }),
     },
   ),

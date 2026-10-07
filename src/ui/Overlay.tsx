@@ -11,8 +11,16 @@ import { Minimap } from "@/ui/Minimap";
 import { TouchControls } from "@/ui/TouchControls";
 import { MapTooltip } from "@/ui/MapTooltip";
 import { OrientationHint } from "@/ui/OrientationHint";
+import { QuestGuide } from "@/ui/QuestGuide";
+import { RedBook } from "@/ui/RedBook";
+import { TrialHud } from "@/ui/TrialHud";
+import { PhotoBar } from "@/ui/PhotoBar";
+import { CinematicOverlay } from "@/ui/CinematicOverlay";
+import { useGame } from "@/state/store";
 
 export function Overlay() {
+  // photo mode and cinematics own the whole screen: no HUD, map or sticks
+  const immersive = useGame((s) => s.photoMode || s.cinematic !== null);
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
       {/* children that need clicks re-enable pointer events themselves */}
@@ -24,14 +32,23 @@ export function Overlay() {
           </filter>
         </svg>
         <WithPointer>
-          <Hud />
-          <Minimap />
-          <TouchControls />
-          <OrientationHint />
+          {!immersive && (
+            <>
+              <Hud />
+              <Minimap />
+              <TouchControls />
+              <QuestGuide />
+              <TrialHud />
+              <OrientationHint />
+            </>
+          )}
           <QuestLog />
           <ScrollPanel />
           <ContactModal />
+          <PhotoBar />
+          <CinematicOverlay />
           <BookCover />
+          <RedBook />
         </WithPointer>
         <Raven />
         <Toasts />

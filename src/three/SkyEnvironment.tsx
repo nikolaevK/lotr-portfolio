@@ -15,15 +15,22 @@ import { skyUniforms } from "@/three/SkyDome";
  * PMREM probe and hands it to the scene, so surfaces reflect the sky they are
  * actually under: warm in Lórien, sodium-red over Mordor.
  *
- * The probe is only re-rendered when the weather has actually drifted, which in
- * practice means a handful of times per flight rather than 60 times a second.
+ * The probe is only re-rendered when the sky has actually drifted — the
+ * weather, or the sun and sky colours as the day turns — at most once a
+ * second (through dusk and dawn), every few seconds by day, and hardly at
+ * all at night, rather than 60 times a second. Each rebuild allocates a fresh
+ * 768×1024 half-float target and recompiles nothing, but churns ~9 MB.
  */
 
 /** Scene-wide IBL strength. The hemisphere light is scaled down to match. */
 export const ENV_INTENSITY = 0.85;
 
-const REBUILD_INTERVAL = 0.5; // seconds
+const REBUILD_INTERVAL = 1; // seconds
+const luminance = (c: THREE.Color) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
 const COLOR_EPS = 0.012;
+
+const colorDrift = (a: THREE.Color, b: THREE.Color) =>
+  Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b);
 
 export function SkyEnvironment() {
   const gl = useThree((s) => s.gl);
@@ -68,7 +75,7 @@ export function SkyEnvironment() {
 
   const state = useRef({
     t: REBUILD_INTERVAL,
-    last: new THREE.Color(1e3, 1e3, 1e3),
+    last: { top: new THREE.Color(1e3, 1e3, 1e3), horizon: new THREE.Color(), sun: new THREE.Color(), dir: new THREE.Vector3() },
     rt: null as THREE.WebGLRenderTarget | null,
   });
 
@@ -90,16 +97,24 @@ export function SkyEnvironment() {
     const st = state.current;
     st.t += dt;
     if (st.t < REBUILD_INTERVAL) return;
-    const top = skyUniforms.uTop.value;
+    const last = st.last;
     const drift =
-      Math.abs(top.r - st.last.r) + Math.abs(top.g - st.last.g) + Math.abs(top.b - st.last.b);
+      colorDrift(skyUniforms.uTop.value, last.top) +
+      colorDrift(skyUniforms.uHorizon.value, last.horizon) +
+      colorDrift(skyUniforms.uSunColor.value, last.sun) * 0.5 +
+      // the sun's highlight in the probe is broad; it can wander a little —
+      // and not at all once the sun has set (its colour is black all night)
+      skyUniforms.uSunDir.value.distanceTo(last.dir) * 0.25 * Math.min(1, luminance(skyUniforms.uSunColor.value));
     // reset the timer on the skip path too, so during a weather transition the
     // probe rebuilds at most once per interval rather than on the first frame
     // the drift crosses the threshold
     st.t = 0;
     if (st.rt && drift < COLOR_EPS) return;
 
-    st.last.copy(top);
+    last.top.copy(skyUniforms.uTop.value);
+    last.horizon.copy(skyUniforms.uHorizon.value);
+    last.sun.copy(skyUniforms.uSunColor.value);
+    last.dir.copy(skyUniforms.uSunDir.value);
     const next = rig.pmrem.fromScene(rig.envScene, 0, 1, 1000);
     st.rt?.dispose();
     st.rt = next;

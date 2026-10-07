@@ -31,8 +31,16 @@ export function CameraRig() {
 
     let stiffness = 3.2;
     let targetFov = 55;
+    const dir = runtime.director;
+    const directed = dir.owner !== null;
 
-    if (s.phase === "cover") {
+    if (directed) {
+      // a cinematic or photo mode is holding the camera
+      _eye.copy(dir.eye);
+      _look.copy(dir.look);
+      targetFov = dir.fov;
+      stiffness = dir.stiffness;
+    } else if (s.phase === "cover") {
       // cinematic drift over the flat parchment
       _eye.set(
         MAP_W * 0.38 + Math.sin(t.current * 0.05) * 90,
@@ -87,9 +95,12 @@ export function CameraRig() {
       if (_eye.y < groundAtEye + 8) _eye.y = groundAtEye + 8;
     }
 
-    const k = 1 - Math.exp(-stiffness * dt);
+    // (a director may pass stiffness Infinity to snap; Infinity × a zero dt
+    // is NaN, and a NaN camera never recovers — so no step on a zero dt)
+    const ease = (rate: number) => (dt > 0 ? 1 - Math.exp(-rate * dt) : 0);
+    const k = ease(stiffness);
     runtime.camPos.lerp(_eye, k);
-    smoothLook.current.lerp(_look, 1 - Math.exp(-4.2 * dt));
+    smoothLook.current.lerp(_look, ease(directed ? stiffness : 4.2));
 
     // keep the (smoothed) camera out of the mountainsides and the towers
     if (s.phase === "map") {
@@ -110,9 +121,10 @@ export function CameraRig() {
     cam.position.set(runtime.camPos.x + shx, runtime.camPos.y + shy, runtime.camPos.z + shx * 0.6);
     cam.up.set(0, 1, 0);
     cam.lookAt(smoothLook.current);
-    if (s.phase === "map" && !s.overview) cam.rotateZ(-runtime.bank * 0.16);
+    if (directed) cam.rotateZ(dir.roll);
+    else if (s.phase === "map" && !s.overview) cam.rotateZ(-runtime.bank * 0.16);
 
-    fovRef.current += (targetFov - fovRef.current) * Math.min(1, 3 * dt);
+    fovRef.current += (targetFov - fovRef.current) * (directed ? ease(stiffness) : Math.min(1, 3 * dt));
     if (Math.abs(cam.fov - fovRef.current) > 0.01) {
       cam.fov = fovRef.current;
       cam.updateProjectionMatrix();

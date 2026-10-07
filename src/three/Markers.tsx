@@ -143,7 +143,9 @@ function Marker({ region }: { region: Region }) {
     const t = clock.elapsedTime;
     if (group.current) {
       group.current.position.y = baseY * morph.value;
-      group.current.visible = morph.value > 0.05;
+      // no beams or banners in a postcard or across a cinematic
+      const g = useGame.getState();
+      group.current.visible = morph.value > 0.05 && !g.photoMode && !g.cinematic;
     }
     beamMat.uniforms.uOpacity.value = (0.42 + Math.sin(t * 2.1) * 0.12) * (hover ? 1.5 : 1);
     if (ring.current) {
@@ -166,8 +168,11 @@ function Marker({ region }: { region: Region }) {
 
   const travel = (e: { stopPropagation: () => void; delta: number }) => {
     e.stopPropagation();
+    const g = useGame.getState();
+    // hidden during a cinematic or photo mode, but its hit volume still catches clicks
+    if (g.cinematic || g.photoMode) return;
     // only map view has a drag gesture to disambiguate from a click
-    if (useGame.getState().overview && e.delta > 6) return;
+    if (g.overview && e.delta > 6) return;
     travelTo(region.id);
   };
 
@@ -180,7 +185,8 @@ function Marker({ region }: { region: Region }) {
       {/* pulsing ground ring */}
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 1.8, 0]}>
         <torusGeometry args={[12, 0.75, 8, 36]} />
-        <meshBasicMaterial color={region.ring} transparent opacity={0.7} blending={THREE.AdditiveBlending} depthWrite={false} />
+        {/* no fog: fogged additively, a far ring becomes a glowing orb of horizon colour at dawn and dusk */}
+        <meshBasicMaterial color={region.ring} transparent opacity={0.7} blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
       </mesh>
       {/* name banner */}
       {labelTex && (

@@ -28,6 +28,23 @@ export const runtime = {
   shake: 0,
   camPos: new THREE.Vector3(MAP_W * 0.42, 420, MAP_H * 0.95),
 
+  // camera director: while `owner` is set (a cinematic, photo mode), the rig
+  // eases toward eye/look/fov instead of following the steed. The owner
+  // writes these every frame and clears `owner` when it lets go.
+  director: {
+    owner: null as string | null,
+    eye: new THREE.Vector3(),
+    look: new THREE.Vector3(),
+    fov: 55,
+    stiffness: 3, // 1/s; Infinity snaps
+    roll: 0, // radians about the view axis
+  },
+
+  // time of day, 0..1 (0 = midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); the
+  // sky advances it. `dayLock` pins it (photo mode's time slider).
+  dayTime: 0.42,
+  dayLock: null as number | null,
+
   // map view (overview) mouse exploration — camera-only, dragon stays put
   overviewPan: new THREE.Vector2(),
   overviewZoom: 1,
@@ -56,5 +73,7 @@ export const runtime = {
     this.overviewPan.set(0, 0);
     this.overviewZoom = 1;
     this.overviewDragging = false;
+    this.director.owner = null;
+    this.dayLock = null;
   },
 };

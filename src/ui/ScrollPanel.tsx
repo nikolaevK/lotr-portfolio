@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useGame } from "@/state/store";
 import {
   useContent,
@@ -11,6 +11,7 @@ import {
 } from "@/state/content";
 import { PARCHMENT_BG, parchmentOverlay, EDGE_BURN } from "@/ui/parchment";
 import { CharacterNiche } from "@/ui/ScrollCharacter";
+import { useDialog } from "@/ui/a11y";
 
 const ACCENT = "#8a6420";
 const INK = "#241a0c";
@@ -67,6 +68,7 @@ function Bullets({ items, fold = 4 }: { items: string[]; fold?: number }) {
       {items.length > fold && (
         <button
           onClick={() => setOpen(!open)}
+          aria-expanded={open}
           className="cinzel"
           style={{
             marginTop: 8,
@@ -201,7 +203,7 @@ function ProjectEntry({ p }: { p: ProjectRecord }) {
 type Tab = "tale" | "record";
 
 /** Keyed by region so tab/fold state resets between scrolls. */
-function ScrollBody({ region, isNew }: { region: RegionContent; isNew: boolean }) {
+function ScrollBody({ region, isNew, titleId }: { region: RegionContent; isNew: boolean; titleId: string }) {
   const tone = useGame((s) => s.tone);
   const xp = useContent((c) => c.xp);
   const t = region[tone];
@@ -209,11 +211,27 @@ function ScrollBody({ region, isNew }: { region: RegionContent; isNew: boolean }
   const hasRecord = rec.experiences.length + rec.educations.length + rec.projects.length > 0;
   const [tab, setTab] = useState<Tab>("tale");
   const active = hasRecord ? tab : "tale";
+  const tabIds = useId();
+
+  // the tab pattern: one tab stop, and with two tabs either arrow flips to the other
+  const onTabKey = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const next: Tab = active === "tale" ? "record" : "tale";
+    setTab(next);
+    document.getElementById(`${tabIds}-${next}`)?.focus();
+  };
 
   const tabBtn = (id: Tab, label: string) => (
     <button
       key={id}
+      id={`${tabIds}-${id}`}
+      role="tab"
+      aria-selected={active === id}
+      aria-controls={`${tabIds}-panel`}
+      tabIndex={active === id ? 0 : -1}
       onClick={() => setTab(id)}
+      onKeyDown={onTabKey}
       className="cinzel"
       style={{
         flex: 1,
@@ -239,7 +257,7 @@ function ScrollBody({ region, isNew }: { region: RegionContent; isNew: boolean }
       <div className="cinzel" style={{ fontSize: 12.5, letterSpacing: ".24em", color: ACCENT, textAlign: "center" }}>
         FROM THE RED BOOK · {region.place.toUpperCase()}
       </div>
-      <h2 className="cinzel" style={{ fontWeight: 700, fontSize: 30, lineHeight: 1.15, margin: "10px 0 6px", textAlign: "center", color: "#2c1f0d", textWrap: "balance" }}>
+      <h2 id={titleId} className="cinzel" style={{ fontWeight: 700, fontSize: 30, lineHeight: 1.15, margin: "10px 0 6px", textAlign: "center", color: "#2c1f0d", textWrap: "balance" }}>
         {t.title}
       </h2>
       <div style={{ fontSize: 17, fontStyle: "italic", color: FADED, marginBottom: 10, textAlign: "center", textWrap: "pretty" }}>{t.sub}</div>
@@ -273,7 +291,7 @@ function ScrollBody({ region, isNew }: { region: RegionContent; isNew: boolean }
 
       {/* tabs — only when the land has a professional record behind the tale */}
       {hasRecord && (
-        <div style={{ display: "flex", gap: 2, marginBottom: 16 }}>
+        <div role="tablist" aria-label="Read this land as" style={{ display: "flex", gap: 2, marginBottom: 16 }}>
           {tabBtn("tale", "THE TALE")}
           {tabBtn("record", "THE RECORD")}
         </div>
@@ -289,7 +307,12 @@ function ScrollBody({ region, isNew }: { region: RegionContent; isNew: boolean }
           </aside>
         )}
 
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          role={hasRecord ? "tabpanel" : undefined}
+          id={hasRecord ? `${tabIds}-panel` : undefined}
+          aria-labelledby={hasRecord ? `${tabIds}-${active}` : undefined}
+          style={{ flex: 1, minWidth: 0 }}
+        >
           {active === "tale" ? (
             <>
               <ul style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 9, fontSize: 17, lineHeight: 1.55 }}>
@@ -364,6 +387,10 @@ export function ScrollPanel() {
   const isNew = useGame((s) => s.regionIsNew);
   const closePanel = useGame((s) => s.closePanel);
   const region = useContent((c) => (regionId ? c.regions.find((r) => r.id === regionId) : undefined));
+  // focus lands on the sheet itself, so arrows, Space and Page keys read on
+  const sheet = useRef<HTMLDivElement>(null);
+  const panel = useDialog<HTMLDivElement>(!!region, { modal: true, initial: sheet });
+  const titleId = useId();
   if (!region) return null;
 
   // turned wooden rod: grain streaks over a lathe-shaded cylinder
@@ -454,7 +481,14 @@ export function ScrollPanel() {
         animation: "fadeIn .3s",
       }}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "min(860px, 94vw)", filter: "drop-shadow(0 36px 60px rgba(0,0,0,.75))" }}>
+      <div
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+        style={{ position: "relative", width: "min(860px, 94vw)", filter: "drop-shadow(0 36px 60px rgba(0,0,0,.75))" }}
+      >
         {roller}
         <div style={{ overflow: "hidden", animation: "unrollH .95s cubic-bezier(.25,1,.4,1) both", maxHeight: "76vh", margin: "-6px 4px", position: "relative", zIndex: 1 }}>
           <div style={{ position: "relative" }}>
@@ -474,8 +508,13 @@ export function ScrollPanel() {
                 />
               </div>
             </div>
-            <div className="scroll-sheet" style={{ position: "relative", maxHeight: "calc(76vh - 58px)", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "32px 46px 28px" }}>
-              <ScrollBody key={region.id} region={region} isNew={isNew} />
+            <div
+              ref={sheet}
+              tabIndex={-1}
+              className="scroll-sheet on-parchment"
+              style={{ position: "relative", maxHeight: "calc(76vh - 58px)", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "32px 46px 28px" }}
+            >
+              <ScrollBody key={region.id} region={region} isNew={isNew} titleId={titleId} />
             </div>
           </div>
         </div>
@@ -483,6 +522,7 @@ export function ScrollPanel() {
         <button
           onClick={closePanel}
           title="Seal the scroll"
+          aria-label="Seal the scroll"
           className="cinzel seal-btn scroll-seal"
           style={{
             position: "absolute",
@@ -500,7 +540,7 @@ export function ScrollPanel() {
             transition: "transform .2s",
           }}
         >
-          <span style={{ fontWeight: 900, fontSize: 20, color: "#f6d9b0", textShadow: "0 -1px 2px rgba(0,0,0,.55)" }}>✕</span>
+          <span aria-hidden style={{ fontWeight: 900, fontSize: 20, color: "#f6d9b0", textShadow: "0 -1px 2px rgba(0,0,0,.55)" }}>✕</span>
         </button>
       </div>
     </div>

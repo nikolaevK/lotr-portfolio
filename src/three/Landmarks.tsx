@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react";
 import { useFrame, type ThreeElements } from "@react-three/fiber";
 import * as THREE from "three";
 import { SEA_LEVEL, SITES, toWorldX, toWorldZ } from "@/data/content";
@@ -10,14 +10,28 @@ import { Plume } from "@/three/Particles";
 import { Kit, disposeGroup, type UVScales } from "@/three/kit";
 import { pbr, plain, surfaces } from "@/three/materials";
 import { useGame } from "@/state/store";
+import { daylight } from "@/three/daylight";
+
+/** 0 by day → 1 once the sun is down: lamps and windows come up as it sets. */
+const dark = () => 1 - daylight.day;
 
 /** Landmark point light — skipped on low quality (every light costs per-fragment
- *  work across the whole forward-rendered scene, terrain included). */
-function Lamp(props: ThreeElements["pointLight"]) {
+ *  work across the whole forward-rendered scene, terrain included). Lamps burn
+ *  brighter after dark — through the colour, so a lamp whose owner animates its
+ *  intensity (the Doors of Durin) still follows the night. */
+function Lamp({ ref, color, ...props }: ThreeElements["pointLight"]) {
   const quality = useGame((s) => s.quality);
+  const light = useRef<THREE.PointLight>(null);
+  useImperativeHandle(ref as Ref<THREE.PointLight>, () => light.current as THREE.PointLight, [quality]);
+  const base = useMemo(() => new THREE.Color(color as THREE.ColorRepresentation), [color]);
+  useFrame(() => {
+    light.current?.color.copy(base).multiplyScalar(1 + 1.6 * dark());
+  });
   if (quality === "low") return null;
-  return <pointLight {...props} />;
+  return <pointLight ref={light} color={color} {...props} />;
 }
+
+const WINDOW_GLOW = { day: 1.2, night: 4.5 };
 
 // ── the shared palette of surfaces ──────────────────────────────────────────
 // Tints multiply a greyscale albedo, so they run brighter than the colour you
@@ -1744,7 +1758,8 @@ function MoriaGate() {
   const glowRef = useRef<THREE.PointLight>(null);
   useFrame(({ clock }) => {
     const breathe = 0.9 + Math.sin(clock.elapsedTime * 0.8) * 0.25;
-    glowMat.emissiveIntensity = breathe;
+    // ithildin mirrors only starlight and moonlight
+    glowMat.emissiveIntensity = breathe * (1 + 0.8 * dark());
     if (glowRef.current) glowRef.current.intensity = 26 * breathe;
   });
   return (
@@ -1759,6 +1774,14 @@ function MoriaGate() {
 }
 
 export function Landmarks() {
+  // lit windows: a glint by day, warm and blooming after dark
+  useFrame(() => {
+    (mats().window as THREE.MeshStandardMaterial).emissiveIntensity = THREE.MathUtils.lerp(
+      WINDOW_GLOW.day,
+      WINDOW_GLOW.night,
+      dark(),
+    );
+  });
   return (
     <group>
       <Hobbiton />

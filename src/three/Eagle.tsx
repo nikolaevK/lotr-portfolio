@@ -8,7 +8,7 @@ import { input } from "@/input/controls";
 import { game } from "@/state/store";
 import { morph } from "@/three/Terrain";
 import { audio } from "@/audio/engine";
-import { createFlightState, stepFlight, EAGLE_TUNING } from "@/three/flight";
+import { createFlightState, stepFlight, steedFrozen, EAGLE_TUNING } from "@/three/flight";
 import { heightToNormal } from "@/three/materials";
 import { mergeRigid } from "@/three/mergeRig";
 
@@ -596,7 +596,7 @@ export function Eagle() {
     const s = game();
     const a = anim.current;
     const fs = flight.current;
-    const frozen = s.phase !== "map" || !!s.region || s.contactOpen || morph.value < 0.55;
+    const frozen = steedFrozen(s);
 
     // ── shared flight dynamics ──
     stepFlight(dt, frozen, EAGLE_TUNING, fs);

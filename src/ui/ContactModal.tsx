@@ -1,20 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useGame } from "@/state/store";
 import { useContent } from "@/state/content";
 import { PARCHMENT_BG, parchmentOverlay, EDGE_BURN } from "@/ui/parchment";
+import { useDialog } from "@/ui/a11y";
 
 export function ContactModal() {
   const open = useGame((s) => s.contactOpen);
+  // mounted per opening, so nothing from a closed letter (a send that failed
+  // after the scroll was shut) haunts the next one
+  return open ? <RavenLetter /> : null;
+}
+
+/** Marks a field invalid for screen readers once the browser rejects it. */
+const flagInvalid = (e: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+  e.currentTarget.setAttribute("aria-invalid", "true");
+const clearInvalid = (e: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  if (e.currentTarget.validity.valid) e.currentTarget.removeAttribute("aria-invalid");
+};
+
+function RavenLetter() {
   const setContact = useGame((s) => s.setContact);
   const sendRaven = useGame((s) => s.sendRaven);
   const profile = useContent((c) => c.profile);
   const resumeVariants = useContent((c) => c.resumeVariants);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (!open) return null;
+  const panel = useDialog<HTMLDivElement>(true, { modal: true });
+  const id = useId();
 
   const email = profile?.email ?? "konstantin@nikolaev.us";
   const links = profile?.links?.length
@@ -64,15 +78,18 @@ export function ContactModal() {
 
   return (
     <div
-      onClick={() => {
-        setContact(false);
-        setError(null); // a failure from a previous attempt must not haunt the next open
-      }}
+      onClick={() => setContact(false)}
       // scrollable backdrop + margin:auto child: taller-than-viewport modals
       // (landscape phones, soft keyboard) stay reachable instead of clipping
       style={{ position: "absolute", inset: 0, background: "rgba(8,5,2,.66)", zIndex: 50, display: "flex", overflowY: "auto", padding: "20px 12px", animation: "fadeIn .3s", pointerEvents: "auto" }}
     >
       <div
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${id}-title`}
+        tabIndex={-1}
+        className="on-parchment"
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "min(480px, 92vw)",
@@ -93,15 +110,19 @@ export function ContactModal() {
         <div style={{ position: "absolute", inset: 0, zIndex: -1, background: PARCHMENT_BG, boxShadow: EDGE_BURN, filter: "url(#roughPaper)", pointerEvents: "none" }} />
         <div style={parchmentOverlay} />
         <div className="cinzel" style={{ position: "relative", fontSize: 13, letterSpacing: ".22em", color: "#8a6420" }}>BY WING TO SHERMAN OAKS</div>
-        <h2 className="cinzel" style={{ fontWeight: 700, fontSize: 26, margin: "8px 0 4px", color: "#2c1f0d" }}>Send a Raven</h2>
+        <h2 id={`${id}-title`} className="cinzel" style={{ fontWeight: 700, fontSize: 26, margin: "8px 0 4px", color: "#2c1f0d" }}>Send a Raven</h2>
         <div style={{ fontSize: 16, fontStyle: "italic", color: "#6d5a33", marginBottom: 18 }}>
           The bird knows the way to <a href={`mailto:${email}`}>{email}</a>
         </div>
         <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <input name="from" required placeholder="Your name" style={inputStyle} />
-          <input name="email" type="email" required placeholder="Your email (so the raven may return)" style={inputStyle} />
-          <textarea name="message" required rows={4} placeholder="Your message…" style={{ ...inputStyle, resize: "vertical" }} />
-          {error && <div style={{ fontSize: 14, fontStyle: "italic", color: "#8c2114" }}>{error}</div>}
+          {/* the placeholders stay the look; the hidden labels name the fields */}
+          <label htmlFor={`${id}-from`} className="sr-only">Your name</label>
+          <input id={`${id}-from`} name="from" required autoComplete="name" placeholder="Your name" onInvalid={flagInvalid} onInput={clearInvalid} style={inputStyle} />
+          <label htmlFor={`${id}-email`} className="sr-only">Your email</label>
+          <input id={`${id}-email`} name="email" type="email" required autoComplete="email" placeholder="Your email (so the raven may return)" onInvalid={flagInvalid} onInput={clearInvalid} style={inputStyle} />
+          <label htmlFor={`${id}-message`} className="sr-only">Your message</label>
+          <textarea id={`${id}-message`} name="message" required rows={4} placeholder="Your message…" onInvalid={flagInvalid} onInput={clearInvalid} style={{ ...inputStyle, resize: "vertical" }} />
+          {error && <div role="alert" style={{ fontSize: 14, fontStyle: "italic", color: "#8c2114" }}>{error}</div>}
           <button
             type="submit"
             disabled={sending}

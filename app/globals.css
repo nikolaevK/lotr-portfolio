@@ -207,3 +207,71 @@ button {
     display: none !important;
   }
 }
+
+/* ===== accessibility ===== */
+
+/* read by screen readers, invisible on the page */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* the first Tab stop: hidden above the page until a keyboard reaches it */
+.skip-link {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  max-width: calc(100vw - 24px);
+  z-index: 1000;
+  padding: 10px 18px;
+  background: linear-gradient(#2b1c0a, #1c1207);
+  color: #ecd9a0;
+  border: 1px solid #c9963c;
+  border-radius: 2px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transform: translateY(calc(-100% - 40px));
+}
+.skip-link:focus {
+  transform: none;
+}
+
+/* keyboard focus: a gold ring (never on a mouse click — :focus-visible).
+   :where() keeps it overridable by any component's own styles. */
+:where(a[href], button, input, select, textarea, summary, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid #e8b95c;
+  outline-offset: 2px;
+}
+/* on parchment, gold vanishes into the paper: the ring is inked instead */
+.on-parchment :where(a[href], button, input, select, textarea, summary, [role="button"], [tabindex]):focus-visible {
+  outline-color: #6b3d0c;
+}
+/* panels that take focus only to hold it for the keyboard draw no ring */
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
+/* the visitor asked for less motion: decorative animation and transitions
+   finish at once (0.01ms, not none, so animationend/transitionend still fire) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .cover-ember {
+    display: none;
+  }
+}

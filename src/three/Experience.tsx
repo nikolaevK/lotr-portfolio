@@ -15,6 +15,10 @@ import { Dragon } from "@/three/Dragon";
 import { Eagle } from "@/three/Eagle";
 import { EagleCry } from "@/three/EagleCry";
 import { CameraRig } from "@/three/CameraRig";
+import { Fauna } from "@/three/Fauna";
+import { Trials } from "@/three/Trials";
+import { Cinematics } from "@/three/Cinematics";
+import { PhotoMode } from "@/three/PhotoMode";
 import { Weather } from "@/three/Weather";
 import { ZoneParticles } from "@/three/Particles";
 import { GodRays } from "@/three/GodRays";
@@ -153,6 +157,10 @@ export function Experience() {
         <GodRays zone="elf" color="#ffd76a" u={0.502} v={0.252} />
         <GodRays zone="gondor" color="#dfe8ff" u={0.607} v={0.607} />
         <VoiceTriggers />
+        <Fauna />
+        <Trials />
+        <Cinematics />
+        <PhotoMode />
         <MapExplore />
         <CameraRig />
         {quality === "high" && <Post />}

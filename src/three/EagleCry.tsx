@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { runtime } from "@/game/runtime";
 import { input } from "@/input/controls";
 import { game } from "@/state/store";
-import { morph } from "@/three/Terrain";
+import { steedFrozen } from "@/three/flight";
 import { audio } from "@/audio/engine";
 import { toWorldX, toWorldZ } from "@/data/content";
 import { useContent } from "@/state/content";
@@ -96,7 +96,7 @@ export function EagleCry() {
     const dt = Math.min(dtRaw, 0.05);
     const st = state.current;
     const s = game();
-    const frozen = s.phase !== "map" || !!s.region || s.contactOpen || morph.value < 0.55;
+    const frozen = steedFrozen(s);
     st.cooldown = Math.max(0, st.cooldown - dt);
 
     const down = input.fire && !frozen;

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Cinzel, IM_Fell_English, EB_Garamond } from "next/font/google";
 import "./globals.css";
+import { SkipToRedBook } from "@/ui/a11y";
 
 const cinzel = Cinzel({
   subsets: ["latin"],
@@ -79,6 +80,7 @@ export default function RootLayout({
             </p>
           </div>
         </noscript>
+        <SkipToRedBook />
         {children}
       </body>
     </html>

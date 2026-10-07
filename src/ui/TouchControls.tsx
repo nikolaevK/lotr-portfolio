@@ -18,9 +18,13 @@ export function TouchControls() {
 
   useEffect(() => {
     return () => {
+      // hidden mid-press (photo mode, a cinematic): the button's pointerup
+      // never comes, so let go of everything here
       input.stickActive = false;
       input.stickX = 0;
       input.stickY = 0;
+      input.fire = false;
+      input.boost = false;
     };
   }, []);
 

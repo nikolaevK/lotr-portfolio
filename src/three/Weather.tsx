@@ -9,7 +9,8 @@ import { runtime } from "@/game/runtime";
 import { game, useGame } from "@/state/store";
 import { skyUniforms } from "@/three/SkyDome";
 import { cloudState } from "@/three/Clouds";
-import { morph } from "@/three/Terrain";
+import { morph, realism } from "@/three/Terrain";
+import { daylight, LIGHT_SWAP_Y } from "@/three/daylight";
 import { audio } from "@/audio/engine";
 import { heightAt } from "@/three/noise";
 
@@ -47,8 +48,62 @@ const PRESETS: Record<string, Preset> = {
   mordor: P("#2e1310", 0.0034, "#7a2a16", 1.05, "#3a1a14", "#241010", 0.5, "#1c0f14", "#5c1f12", "#4a2620", 0.95),
 };
 
-const SUN_DIR = new THREE.Vector3(-0.45, 0.5, -0.42).normalize();
 const _c = new THREE.Color();
+const _light = new THREE.Vector3();
+
+// ── the time of day, laid over the zone presets ─────────────────────────────
+// The presets above are each land at noon. A low sun warms them (DUSK), the
+// blue hour after it sets turns them rose and lavender (TWILIGHT) — both are
+// linear multipliers at full strength — and night pulls them toward a bright
+// moonlit blue (NIGHT): never to black, the content still has to read, and
+// keeping a trace of each land's own character.
+
+const DUSK = {
+  sun: new THREE.Color(1, 0.55, 0.25),
+  skyTop: new THREE.Color(0.72, 0.62, 0.86),
+  skyHorizon: new THREE.Color(1.25, 0.72, 0.5),
+  fog: new THREE.Color(1.12, 0.8, 0.64),
+  hemiSky: new THREE.Color(1.05, 0.84, 0.74),
+  hemiGround: new THREE.Color(1, 0.88, 0.8),
+  cloud: new THREE.Color(1, 0.7, 0.55), // peach, but never brighter than by day — or puffs bloom like suns
+};
+
+const TWILIGHT = {
+  skyTop: new THREE.Color(0.55, 0.6, 0.85),
+  skyHorizon: new THREE.Color(0.85, 0.7, 0.95),
+  fog: new THREE.Color(0.7, 0.68, 0.9),
+  hemiSky: new THREE.Color(0.7, 0.72, 0.95),
+  hemiGround: new THREE.Color(0.8, 0.8, 0.9),
+  cloud: new THREE.Color(1, 0.75, 0.85),
+};
+
+const NIGHT = {
+  skyTop: new THREE.Color("#0c1a38"),
+  skyHorizon: new THREE.Color("#2a4a80"),
+  fog: new THREE.Color("#243a62"),
+  hemiSky: new THREE.Color("#86a2d8"),
+  hemiGround: new THREE.Color("#3a4562"),
+  cloud: new THREE.Color("#56678a"),
+  hemiI: 1.6,
+};
+/** how far night replaces a land's colours (the rest is the land's own) */
+const NIGHT_PULL = 0.94;
+
+const MOON = new THREE.Color("#b4c8f0");
+const MOON_I = 2.0;
+
+/** `src` warmed by the low sun (g), cooled by the blue hour (tw), then pulled toward `night` by n. */
+function shade(
+  out: THREE.Color, src: THREE.Color, dusk: THREE.Color, twilight: THREE.Color, night: THREE.Color,
+  g: number, tw: number, n: number,
+) {
+  out.setRGB(
+    src.r * (1 + (dusk.r - 1) * g) * (1 + (twilight.r - 1) * tw),
+    src.g * (1 + (dusk.g - 1) * g) * (1 + (twilight.g - 1) * tw),
+    src.b * (1 + (dusk.b - 1) * g) * (1 + (twilight.b - 1) * tw),
+  );
+  return out.lerp(night, n);
+}
 
 /**
  * The hemisphere light was standing in for ambient light. Now that
@@ -88,9 +143,11 @@ export function Weather() {
       cloud: new THREE.Color("#f6efe0"), cloudO: 0.8,
     },
     tgt: clonePreset(PRESETS.clear),
+    lit: clonePreset(PRESETS.clear), // cur under the time of day — what is actually shown
     mix: new THREE.Color(),
     flash: 0,
     mapFog: 1, // fog scale, eased toward 0.5 in map view
+    gloom: 0,
     nextStrike: 6,
     clock: 0,
   });
@@ -163,6 +220,7 @@ export function Weather() {
     tgt.skyHorizon.copy(c.skyHorizon).multiplyScalar(wc);
     tgt.cloud.copy(c.cloud).multiplyScalar(wc);
     tgt.cloudO = c.cloudO * wc;
+    let mordorBlend = 0;
     for (const r of regions) {
       const w0 = weights[r.id];
       if (w0 <= 0.001) continue;
@@ -170,6 +228,7 @@ export function Weather() {
       if (!p) continue; // admin-added region without a compiled weather preset stays clear
       const w = w0 * w0 * w0;
       total += w;
+      if (r.id === "mordor") mordorBlend = w;
       tgt.fog.add(_c.copy(p.fog).multiplyScalar(w));
       tgt.fogDensity += p.fogDensity * w;
       tgt.sun.add(_c.copy(p.sun).multiplyScalar(w));
@@ -209,32 +268,71 @@ export function Weather() {
     cur.skyHorizon.lerp(tgt.skyHorizon, k);
     cur.cloud.lerp(tgt.cloud, k);
     cur.cloudO = THREE.MathUtils.lerp(cur.cloudO, tgt.cloudO, k);
+    // Mordor's share of the blend: how much of its reek is in the air
+    st.gloom = THREE.MathUtils.lerp(st.gloom, mordorBlend * inv, k);
 
-    st.fog.color.copy(cur.fog);
+    // ── the time of day over the blended zones. Mordor keeps most of its own
+    // gloom, and the map view only dims at night — it still has to be read.
+    const murk = st.gloom;
+    const g = daylight.golden * (1 - 0.7 * murk);
+    const tw = daylight.twilight * (1 - 0.7 * murk);
+    const n = daylight.night * NIGHT_PULL * (1 - 0.8 * murk) * (0.55 + 0.45 * realism.value);
+    const lit = st.lit;
+    shade(lit.skyTop, cur.skyTop, DUSK.skyTop, TWILIGHT.skyTop, NIGHT.skyTop, g, tw, n);
+    shade(lit.skyHorizon, cur.skyHorizon, DUSK.skyHorizon, TWILIGHT.skyHorizon, NIGHT.skyHorizon, g, tw, n);
+    shade(lit.fog, cur.fog, DUSK.fog, TWILIGHT.fog, NIGHT.fog, g, tw, n);
+    shade(lit.hemiSky, cur.hemiSky, DUSK.hemiSky, TWILIGHT.hemiSky, NIGHT.hemiSky, g, tw, n);
+    shade(lit.hemiGround, cur.hemiGround, DUSK.hemiGround, TWILIGHT.hemiGround, NIGHT.hemiGround, g, tw, n);
+    shade(lit.cloud, cur.cloud, DUSK.cloud, TWILIGHT.cloud, NIGHT.cloud, g, tw, n);
+    lit.sun.copy(cur.sun).lerp(_c.copy(cur.sun).multiply(DUSK.sun), g);
+    const sunY = daylight.sunDir.y;
+    const moonY = daylight.moonDir.y;
+
+    st.fog.color.copy(lit.fog);
     // the map view looks down from ~600 units, where a zone's full fog (the
     // forge-smoke of Erebor, say) washes the map out; ease it off up there
     st.mapFog += ((game().overview ? 0.5 : 1) - st.mapFog) * Math.min(1, 2.5 * dt);
     st.fog.density = cur.fogDensity * st.mapFog;
-    skyUniforms.uTop.value.copy(cur.skyTop);
-    skyUniforms.uHorizon.value.copy(cur.skyHorizon);
-    skyUniforms.uSunColor.value.copy(cur.sun);
-    skyUniforms.uGround.value.copy(cur.hemiGround);
-    skyUniforms.uSunDir.value.copy(SUN_DIR);
-    cloudState.tint.copy(cur.cloud);
+    skyUniforms.uTop.value.copy(lit.skyTop);
+    skyUniforms.uHorizon.value.copy(lit.skyHorizon);
+    // the sun's glow lingers in the sky through the blue hour after it sets
+    skyUniforms.uSunColor.value.copy(lit.sun).multiplyScalar(THREE.MathUtils.smoothstep(sunY, -0.22, 0));
+    skyUniforms.uGround.value.copy(lit.hemiGround);
+    skyUniforms.uSunDir.value.copy(daylight.sunDir);
+    skyUniforms.uGlow.value = Math.max(g, tw);
+    skyUniforms.uMoonDir.value.copy(daylight.moonDir);
+    skyUniforms.uMoon.value =
+      THREE.MathUtils.smoothstep(moonY, -0.02, 0.08) * (0.3 + 0.7 * daylight.night) * (1 - 0.7 * murk);
+    cloudState.tint.copy(lit.cloud);
     cloudState.opacity = cur.cloudO;
 
     if (dir.current) {
-      dir.current.color.copy(cur.sun);
-      dir.current.intensity = cur.sunI;
-      dir.current.position.set(vx, runtime.pos.y, vz).addScaledVector(SUN_DIR, 620);
+      // one shadow-casting light: the sun by day, the moon by night
+      const sunUp = sunY > LIGHT_SWAP_Y;
+      if (sunUp) {
+        dir.current.color.copy(lit.sun);
+        dir.current.intensity = cur.sunI * THREE.MathUtils.smoothstep(sunY, LIGHT_SWAP_Y, 0.1);
+      } else {
+        dir.current.color.copy(MOON);
+        dir.current.intensity =
+          MOON_I *
+          (1 - THREE.MathUtils.smoothstep(sunY, -0.2, LIGHT_SWAP_Y)) *
+          THREE.MathUtils.smoothstep(moonY, 0, 0.15) *
+          (1 - 0.6 * murk);
+      }
+      // shadows from a light grazing the land are all acne and smear, so the
+      // light itself never drops below ~7° even as the disc meets the horizon
+      _light.copy(sunUp ? daylight.sunDir : daylight.moonDir);
+      if (_light.y < 0.12) _light.setY(0.12).normalize();
+      dir.current.position.set(vx, runtime.pos.y, vz).addScaledVector(_light, 620);
       dir.current.target.position.set(vx, runtime.pos.y, vz);
       dir.current.target.updateMatrixWorld();
       dir.current.castShadow = quality === "high";
     }
     if (hemi.current) {
-      hemi.current.color.copy(cur.hemiSky);
-      hemi.current.groundColor.copy(cur.hemiGround);
-      hemi.current.intensity = cur.hemiI * HEMI_WITH_IBL;
+      hemi.current.color.copy(lit.hemiSky);
+      hemi.current.groundColor.copy(lit.hemiGround);
+      hemi.current.intensity = THREE.MathUtils.lerp(cur.hemiI, NIGHT.hemiI, n) * HEMI_WITH_IBL;
     }
 
     // ── Mordor lightning ──

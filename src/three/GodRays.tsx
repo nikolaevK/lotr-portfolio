@@ -7,6 +7,7 @@ import { runtime } from "@/game/runtime";
 import { morph } from "@/three/Terrain";
 import { toWorldX, toWorldZ } from "@/data/content";
 import { heightAt } from "@/three/noise";
+import { daylight } from "@/three/daylight";
 
 function makeRayTexture() {
   const cv = document.createElement("canvas");
@@ -72,7 +73,8 @@ export function GodRays({ zone, color, u, v }: { zone: string; color: string; u:
 
   useFrame((_, dt) => {
     const w = (runtime.zoneWeights[zone] ?? 0) * morph.value;
-    mat.opacity = w * 0.34;
+    // sunbeams thin to faint moonbeams after dark
+    mat.opacity = w * 0.34 * THREE.MathUtils.lerp(0.25, 1, daylight.day);
     if (group.current) {
       group.current.rotation.y += dt * 0.02;
       group.current.visible = w > 0.02;
