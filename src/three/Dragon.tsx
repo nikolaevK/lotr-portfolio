@@ -10,6 +10,7 @@ import { morph } from "@/three/Terrain";
 import { audio } from "@/audio/engine";
 import { createFlightState, stepFlight, DRAGON_TUNING } from "@/three/flight";
 import { heightToNormal, heightToRoughness } from "@/three/materials";
+import { mergeRigid, skinRigid } from "@/three/mergeRig";
 
 // ── palette (from the 2D concept) ────────────────────────────────────────────
 const RED = new THREE.Color("#96201d");
@@ -89,8 +90,9 @@ interface WingRig {
   side: 1 | -1;
   membrane: THREE.BufferGeometry;
   mesh: THREE.Mesh;
-  bonesMeshes: THREE.Mesh[]; // arm + finger rods
-  claws: THREE.Mesh[]; // wingtip + thumb claw
+  // transform proxies — their matrices feed the shared instanced rods/claws
+  bonesMeshes: THREE.Object3D[]; // arm + finger rods
+  claws: THREE.Object3D[]; // wingtip + thumb claw
   rest: {
     S: THREE.Vector3; E: THREE.Vector3; W: THREE.Vector3;
     F: THREE.Vector3[]; H: THREE.Vector3; L: THREE.Vector3;
@@ -105,6 +107,8 @@ interface Rig {
   mouth: THREE.Object3D;
   mouthTip: THREE.Object3D;
   wings: WingRig[];
+  rods: THREE.InstancedMesh;
+  wingClaws: THREE.InstancedMesh;
   legs: THREE.Group[];
   nostrilMat: THREE.MeshStandardMaterial;
   mouthGlowMat: THREE.MeshBasicMaterial;
@@ -447,6 +451,7 @@ function buildDragon(): Rig {
     }
   }
 
+  const pupilMat = new THREE.MeshBasicMaterial({ color: "#12060a" });
   // horns — swept back, two pairs + cheek studs
   const hornCurve = (len: number, lift: number, out: number) =>
     new THREE.CatmullRomCurve3([
@@ -485,7 +490,7 @@ function buildDragon(): Rig {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.115, 12, 10), eyeMat);
     eye.position.set(0.34, 0.14, sd * 0.43);
     headGroup.add(eye);
-    const pupil = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.16, 0.02), new THREE.MeshBasicMaterial({ color: "#12060a" }));
+    const pupil = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.16, 0.02), pupilMat);
     pupil.position.set(0.35, 0.14, sd * 0.53);
     pupil.rotation.y = sd * 0.25;
     headGroup.add(pupil);
@@ -579,6 +584,15 @@ function buildDragon(): Rig {
   const wings: WingRig[] = [];
   const rodGeo = new THREE.CylinderGeometry(1, 0.8, 1, 6);
   const wingClawGeo = new THREE.ConeGeometry(0.07, 0.42, 5);
+  // all 12 rods and 4 claws of both wings are two instanced draws
+  const rods = new THREE.InstancedMesh(rodGeo, redDarkMat, 12);
+  const wingClaws = new THREE.InstancedMesh(wingClawGeo, clawMat, 4);
+  for (const im of [rods, wingClaws]) {
+    im.castShadow = true;
+    im.frustumCulled = false;
+    im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    inner.add(im);
+  }
   for (const sd of [-1, 1] as const) {
     const S = new THREE.Vector3(0.95, 0.62, sd * 0.78);
     const E = new THREE.Vector3(1.13, 1.52, sd * 2.4);
@@ -609,23 +623,26 @@ function buildDragon(): Rig {
     mesh.frustumCulled = false;
     inner.add(mesh);
 
-    const bonesMeshes: THREE.Mesh[] = [];
-    for (let i = 0; i < 6; i++) {
-      const rod = new THREE.Mesh(rodGeo, redDarkMat);
-      rod.castShadow = true;
-      inner.add(rod);
-      bonesMeshes.push(rod);
-    }
-    const claws: THREE.Mesh[] = [];
-    for (let i = 0; i < 2; i++) {
-      const c = new THREE.Mesh(wingClawGeo, clawMat);
-      c.castShadow = true;
-      inner.add(c);
-      claws.push(c);
-    }
+    const bonesMeshes = Array.from({ length: 6 }, () => new THREE.Object3D());
+    const claws = Array.from({ length: 2 }, () => new THREE.Object3D());
 
     wings.push({ side: sd, membrane: mg, mesh, bonesMeshes, claws, rest: { S, E, W, F, H, L } });
   }
+
+  // ── collapse the authored parts into a few draw calls ──
+  // spikes, barbs and the tail spade ride their bones via skinning; the head,
+  // jaw and each leg are rigid groups merged per material
+  const animated = new Set<THREE.Object3D>([headGroup, ...legs]);
+  const boneParts: { obj: THREE.Object3D; bone: number }[] = [];
+  bones.forEach((b, i) => {
+    for (const c of b.children) {
+      if (!(c as THREE.Bone).isBone && !animated.has(c)) boneParts.push({ obj: c, bone: i });
+    }
+  });
+  skinRigid(body, boneParts);
+  mergeRigid(headGroup, new Set([jawPivot]));
+  mergeRigid(jawPivot);
+  for (const leg of legs) mergeRigid(leg);
 
   return {
     group,
@@ -635,6 +652,8 @@ function buildDragon(): Rig {
     mouth,
     mouthTip,
     wings,
+    rods,
+    wingClaws,
     legs,
     nostrilMat,
     mouthGlowMat,
@@ -702,6 +721,9 @@ export function Dragon() {
           const mat = m.material as THREE.Material | THREE.Material[];
           if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
           else mat?.dispose();
+          // instance buffers and bone textures are the mesh's own GPU memory
+          if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose();
+          if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.dispose();
         }
       });
       for (const t of rig.textures) t.dispose();
@@ -776,7 +798,8 @@ export function Dragon() {
     a.flapVel += ((flapNow - a.lastFlap) / Math.max(dt, 1e-4) - a.flapVel) * Math.min(1, 10 * dt);
     a.lastFlap = flapNow;
 
-    for (const wing of rig.wings) {
+    for (let wi = 0; wi < rig.wings.length; wi++) {
+      const wing = rig.wings[wi];
       const sgn = wing.side;
       const { S, E, W, F, H, L } = wing.rest;
       const eP = _v.set(0, 0, 0);
@@ -844,6 +867,8 @@ export function Dragon() {
         rod.scale.set(r, L2, r);
         _axis.copy(_v2).normalize();
         rod.quaternion.setFromUnitVectors(AXIS_Y, _axis);
+        rod.updateMatrix();
+        rig.rods.setMatrixAt(wi * 6 + i, rod.matrix);
       }
       // wingtip claw (follows leading finger) + thumb claw at the wrist
       const tip = wing.claws[0];
@@ -854,7 +879,13 @@ export function Dragon() {
       _v2.set(0.85, 0.12, sgn * 0.25).normalize();
       thumb.position.copy(wP).addScaledVector(_v2, 0.15);
       thumb.quaternion.setFromUnitVectors(AXIS_Y, _v2);
+      tip.updateMatrix();
+      thumb.updateMatrix();
+      rig.wingClaws.setMatrixAt(wi * 2, tip.matrix);
+      rig.wingClaws.setMatrixAt(wi * 2 + 1, thumb.matrix);
     }
+    rig.rods.instanceMatrix.needsUpdate = true;
+    rig.wingClaws.instanceMatrix.needsUpdate = true;
 
     // legs sway gently
     for (let i = 0; i < rig.legs.length; i++) {

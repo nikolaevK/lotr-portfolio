@@ -73,6 +73,7 @@ const K = MAP_W / 1536;
 const HK = 1.5;
 const BASE_F = 0.008 / (K * 0.72); // rolling-land frequency (slightly denser than pure scale)
 const DET_F = 0.02 / (K * 0.72);
+const CRAG_F = 1 / 26;
 
 // ── Middle-earth relief, authored in map-fraction space (u,v) ────────────────
 interface Ridge { a: [number, number]; b: [number, number]; w: number; h: number }
@@ -94,12 +95,40 @@ const RIDGES: Ridge[] = [
 
 interface Peak { u: number; v: number; r: number; h: number; pow: number }
 
+// Minas Tirith has no hill of its own: its seven tiers are the hill, built
+// out from the cliff of Mindolluin (the White Mountains' eastern end).
 const PEAKS: Peak[] = [
   { u: 0.670, v: 0.205, r: 22, h: 92, pow: 1.7 }, // Erebor, the Lonely Mountain
   { u: 0.700, v: 0.585, r: 25, h: 58, pow: 1.5 }, // Mount Doom
   { u: 0.452, v: 0.261, r: 9, h: 16, pow: 1.2 },  // Weathertop
-  { u: 0.607, v: 0.607, r: 15, h: 24, pow: 1.1 }, // hill of Minas Tirith
-  { u: 0.512, v: 0.542, r: 7, h: 9, pow: 1.1 },   // the hill of Edoras
+  { u: 0.512, v: 0.542, r: 11, h: 10, pow: 1.1 }, // the hill of Edoras — broad enough for the town
+];
+
+/**
+ * Landmark pads: the land is levelled under each structure so nothing hangs
+ * over a slope or sinks into one. `at` samples the pad's level somewhere other
+ * than its centre (Minas Tirith takes the plain to its east, not the mountain
+ * shoulder it backs onto). r = flat radius, blend = falloff, world units.
+ */
+interface Pad { u: number; v: number; r: number; blend: number; at?: [number, number] }
+
+const PADS: Pad[] = [
+  { u: 0.352, v: 0.258, r: 40, blend: 36 }, // Hobbiton
+  { u: 0.502, v: 0.252, r: 24, blend: 18 }, // Rivendell
+  { u: 0.548, v: 0.372, r: 26, blend: 26 }, // Lothlórien
+  { u: 0.664, v: 0.240, r: 30, blend: 22 }, // Erebor's gate apron
+  { u: 0.607, v: 0.607, r: 36, blend: 30, at: [0.632, 0.607] }, // Minas Tirith, on the plain
+  { u: 0.727, v: 0.583, r: 14, blend: 16 }, // Barad-dûr
+  { u: 0.512, v: 0.542, r: 27, blend: 20 }, // Edoras' crown
+  { u: 0.489, v: 0.489, r: 33, blend: 22 }, // the ring of Isengard
+  { u: 0.452, v: 0.261, r: 13, blend: 10 }, // the crown of Weathertop
+  // Moria's dell: cut down into the west flank, so the gate's cliff backs
+  // into the mountain instead of standing above the crest like a monolith
+  { u: 0.499, v: 0.352, r: 22, blend: 18, at: [0.486, 0.352] },
+  { u: 0.700, v: 0.585, r: 8, blend: 6 }, // the floor of Orodruin's crater, under the lava pool
+  // Dale, down the valley from the gate. It sits on the apron's ramp, so it
+  // takes the apron's level — its own (lower) level would undercut the causeway
+  { u: 0.6605, v: 0.2665, r: 16, blend: 14, at: [0.664, 0.240] },
 ];
 
 // Western coastline: for a given v, sea lies where u < coastU(v)
@@ -134,7 +163,7 @@ function distToSeg(px: number, pz: number, ax: number, az: number, bx: number, b
   t = Math.min(1, Math.max(0, t));
   const cx = ax + dx * t;
   const cz = az + dz * t;
-  return Math.hypot(px - cx, pz - cz);
+  return Math.sqrt((px - cx) * (px - cx) + (pz - cz) * (pz - cz));
 }
 
 // Inland waters as soft ellipses: [u, v, semiU, semiV]
@@ -167,11 +196,64 @@ export function seaMask(u: number, v: number): number {
   return m;
 }
 
+let padLevels: number[] | null = null;
+
 /**
  * World-space terrain height (x ∈ [0,MAP_W], z ∈ [0,MAP_H]).
  * This single function drives the mesh, dragon altitude, landmarks and camera.
  */
 export function heightAt(x: number, z: number): number {
+  let h = naturalHeight(x, z);
+
+  // landmark pads — levels sampled once from the natural land
+  if (!padLevels) {
+    padLevels = PADS.map((p) => {
+      const [u, v] = p.at ?? [p.u, p.v];
+      return naturalHeight(u * MAP_W, v * MAP_H);
+    });
+  }
+  for (let i = 0; i < PADS.length; i++) {
+    const p = PADS[i];
+    const dx = x - p.u * MAP_W;
+    const dz = z - p.v * MAP_H;
+    const R = p.r + p.blend;
+    if (dx * dx + dz * dz >= R * R) continue;
+    h = lerp(h, padLevels[i], smoothstep(R, p.r, Math.sqrt(dx * dx + dz * dz)));
+  }
+
+  // Erebor: the gate is cut into a sheer face — the mountain rises straight
+  // up behind it instead of the slope running down to the gate's roof
+  {
+    const dx = x - 0.664 * MAP_W;
+    const dz = z - 0.240 * MAP_H;
+    if (dz < -2 && dz > -70 && Math.abs(dx) < 62) {
+      const lift = 56 * smoothstep(-3, -15, dz) * smoothstep(-70, -50, dz) * smoothstep(60, 34, Math.abs(dx));
+      // eased in from nothing at every edge of the box, so its border never
+      // stands as a wall; within a few units of the gate the face is sheer
+      if (lift > 0) {
+        const cliff = padLevels[3] + lift * (0.9 + 0.2 * ridged(x * 0.05, z * 0.05));
+        h = Math.max(h, lerp(h, cliff, Math.min(1, lift / 8)));
+      }
+    }
+  }
+  return h;
+}
+
+/** How fully (0–1) a landmark pad levels the land at (x, z). */
+export function padWeight(x: number, z: number): number {
+  let w = 0;
+  for (const p of PADS) {
+    const dx = x - p.u * MAP_W;
+    const dz = z - p.v * MAP_H;
+    const R = p.r + p.blend;
+    if (dx * dx + dz * dz >= R * R) continue;
+    w = Math.max(w, smoothstep(R, p.r, Math.sqrt(dx * dx + dz * dz)));
+  }
+  return w;
+}
+
+/** The land as nature made it — before anything was built on it. */
+function naturalHeight(x: number, z: number): number {
   const u = x / MAP_W;
   const v = z / MAP_H;
 
@@ -185,35 +267,46 @@ export function heightAt(x: number, z: number): number {
 
   // mountain ridges (max-blend), rockified by ridged noise
   let mtn = 0;
+  let rock = -1;
   for (const r of RIDGES) {
     const d = distToSeg(x, z, r.a[0] * MAP_W, r.a[1] * MAP_H, r.b[0] * MAP_W, r.b[1] * MAP_H);
     const w = r.w * K;
     const g = Math.exp(-(d * d) / (2 * w * w));
     if (g > 0.004) {
-      const rock = 0.62 + 0.55 * ridged(x * DET_F + 17, z * DET_F);
-      mtn = Math.max(mtn, r.h * HK * g * rock);
+      if (rock < 0) rock = 0.62 + 0.55 * ridged(x * DET_F + 17, z * DET_F);
+      // (g - cut-off): no step where the ridge's reach ends
+      mtn = Math.max(mtn, r.h * HK * (g - 0.004) * rock);
     }
   }
+  // crags — sharp ridged detail at ~20-unit scale, so peaks break the sky
+  // with spurs and gullies instead of reading as smooth dunes
+  if (mtn > 2) h += (ridged(x * CRAG_F + 31, z * CRAG_F - 7) - 0.45) * Math.min(mtn, 70) * 0.16 * smoothstep(2, 6, mtn);
   h += mtn;
 
-  // solitary peaks
+  // solitary peaks, craggy like the ridges
   for (const p of PEAKS) {
-    const d = Math.hypot(x - p.u * MAP_W, z - p.v * MAP_H);
+    const px = x - p.u * MAP_W;
+    const pz = z - p.v * MAP_H;
+    const d = Math.sqrt(px * px + pz * pz);
     const pr = p.r * K;
     const g = Math.exp(-(d * d) / (2 * pr * pr));
-    if (g > 0.004) h += p.h * HK * Math.pow(g, p.pow) * (0.85 + 0.3 * ridged(x * DET_F * 1.5, z * DET_F * 1.5 + 9));
+    if (g > 0.004) {
+      const pk = p.h * HK * Math.pow(g, p.pow) * (0.85 + 0.3 * ridged(x * DET_F * 1.5, z * DET_F * 1.5 + 9));
+      h += pk;
+      if (pk > 2) h += (ridged(x * CRAG_F - 13, z * CRAG_F + 5) - 0.45) * Math.min(pk, 70) * 0.12 * smoothstep(2, 6, pk);
+    }
   }
 
   // Mount Doom crater dip
   {
-    const d = Math.hypot(x - 0.700 * MAP_W, z - 0.585 * MAP_H);
+    const d = Math.sqrt((x - 0.700 * MAP_W) ** 2 + (z - 0.585 * MAP_H) ** 2);
     const cr = 4.5 * K;
     h -= 16 * HK * Math.exp(-(d * d) / (2 * cr * cr));
   }
 
   // Shire — soft green downs
   {
-    const d = Math.hypot(x - 0.352 * MAP_W, z - 0.262 * MAP_H);
+    const d = Math.sqrt((x - 0.352 * MAP_W) ** 2 + (z - 0.262 * MAP_H) ** 2);
     const gr = 85 * K;
     const g = Math.exp(-(d * d) / (2 * gr * gr));
     h += g * (4 + 7 * (fbm(x * DET_F + 40, z * DET_F, 3) * 0.5 + 0.5)) * HK;
@@ -230,12 +323,12 @@ export function heightAt(x: number, z: number): number {
     const g = Math.exp(-((lx * lx) / (2 * 46 * K * 46 * K) + (lz * lz) / (2 * 11 * K * 11 * K)));
     h -= 18 * HK * g;
     h += 9 * HK * Math.exp(-((lx * lx) / (2 * 60 * K * 60 * K) + ((Math.abs(lz) - 16 * K) ** 2) / (2 * 7 * K * 7 * K)));
-    if (g > 0.35) h = Math.max(h, SEA_LEVEL + 2.2);
+    h = lerp(h, Math.max(h, SEA_LEVEL + 2.2), smoothstep(0.3, 0.4, g));
   }
 
   // Mordor plateau (charred uplands inside the rim)
   {
-    const d = Math.hypot(x - 0.715 * MAP_W, z - 0.635 * MAP_H);
+    const d = Math.sqrt((x - 0.715 * MAP_W) ** 2 + (z - 0.635 * MAP_H) ** 2);
     const pr = 105 * K;
     h += 7 * HK * Math.exp(-(d * d) / (2 * pr * pr));
   }

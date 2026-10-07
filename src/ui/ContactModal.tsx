@@ -77,19 +77,20 @@ export function ContactModal() {
         style={{
           width: "min(480px, 92vw)",
           margin: "auto",
-          background: PARCHMENT_BG,
           border: "2px solid #6b5327",
           outline: "1px solid rgba(201,150,60,.4)",
           outlineOffset: 3,
           borderRadius: 3,
-          boxShadow: `0 30px 80px rgba(0,0,0,.7), ${EDGE_BURN}`,
+          boxShadow: "0 30px 80px rgba(0,0,0,.7)",
           padding: "34px 40px",
           color: "#241a0c",
           position: "relative",
           overflow: "hidden",
-          filter: "url(#roughPaper)",
+          isolation: "isolate",
         }}
       >
+        {/* the paper frays at its edges; the form and its words stay crisp */}
+        <div style={{ position: "absolute", inset: 0, zIndex: -1, background: PARCHMENT_BG, boxShadow: EDGE_BURN, filter: "url(#roughPaper)", pointerEvents: "none" }} />
         <div style={parchmentOverlay} />
         <div className="cinzel" style={{ position: "relative", fontSize: 13, letterSpacing: ".22em", color: "#8a6420" }}>BY WING TO SHERMAN OAKS</div>
         <h2 className="cinzel" style={{ fontWeight: 700, fontSize: 26, margin: "8px 0 4px", color: "#2c1f0d" }}>Send a Raven</h2>

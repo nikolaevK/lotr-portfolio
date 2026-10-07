@@ -787,7 +787,8 @@ function Erebor() {
       <Grounded u={0.670} v={0.200}>
         <Plume position={[0, 0, 0]} color="#8a8178" count={70} spread={6} height={110} size={4.4} rise={11} additive={false} opacity={0.4} />
       </Grounded>
-      <Grounded u={0.6625} v={0.2505}>
+      {/* Dale stands down the valley, clear of the gate's apron */}
+      <Grounded u={0.6605} v={0.2665}>
         <primitive object={dale} />
       </Grounded>
     </>
@@ -886,9 +887,10 @@ function buildMinasTirith(k: Kit) {
   });
 
   // the spur of rock that splits the city, and the Great Gate at its foot
-  k.box("rock", 4.6, 28, 30, { x: 10, y: 14, z: 0, rz: -0.09, shade: 0.88 });
+  // (the city's own pale stone — in dark rock it read as a black slab)
+  k.box("white", 4.6, 28, 30, { x: 10, y: 14, z: 0, rz: -0.09, shade: 0.86 });
   // a prow of bare rock thrusting east, apex laid over toward +X
-  k.wedge("rock", 13, 26, 9.0, { x: 20, y: 8, z: 0, rz: -Math.PI / 2, shade: 0.86 });
+  k.wedge("white", 13, 26, 9.0, { x: 20, y: 8, z: 0, rz: -Math.PI / 2, shade: 0.84 });
   k.archWall("white", 13, 13, 4.5, 5.0, 8.0, 0, { x: 26.2, y: 6.5, z: 0, ry: Math.PI / 2 });
   for (const sz of [-1, 1]) {
     k.cyl("white", 2.4, 3.0, 15, 12, { x: 25.6, y: 7.5, z: sz * 7.6 });
@@ -1007,60 +1009,165 @@ function buildBaradDur(k: Kit) {
   k.cyl("obsidian", 3.0, 3.6, 4.0, 8, { y: 91 });
 }
 
+// ── the Eye ──────────────────────────────────────────────────────────────────
+// A lidless eye wreathed in flame: an elliptical blaze around a black slit,
+// its rim licked by animated fire. Drawn as a camera-facing billboard with
+// additive light far above 1, so bloom carries it as the brightest thing in
+// Mordor.
+
+const EYE_VERT = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`;
+
+const EYE_FRAG = /* glsl */ `
+  uniform float uTime;
+  varying vec2 vUv;
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+  float fbm(vec2 p) {
+    float s = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 4; i++) { s += a * noise(p); p *= 2.03; a *= 0.5; }
+    return s;
+  }
+  void main() {
+    vec2 p = vUv * 2.0 - 1.0;
+    // a wide almond, as a cat's eye is; flames rise off its rim
+    vec2 q = vec2(p.x * 1.0, p.y * 1.75);
+    float r = length(q);
+    float a = atan(q.y, q.x + 1e-6); // atan(0, 0) is undefined, and one NaN pixel blacks out the bloom
+    float flick = fbm(vec2(a * 2.2 + uTime * 0.4, r * 3.0 - uTime * 1.9));
+    float rim = 0.62 + flick * 0.42 + max(p.y, 0.0) * 0.25;
+    float body = smoothstep(rim, rim * 0.55, r);
+    // iris: molten gold to white heat at the centre, streaked
+    float streak = fbm(vec2(a * 6.0, r * 8.0 - uTime * 0.7));
+    vec3 col = mix(vec3(0.95, 0.16, 0.02), vec3(1.0, 0.5, 0.1), smoothstep(0.8, 0.3, r));
+    col = mix(col, vec3(1.0, 0.82, 0.45), smoothstep(0.28, 0.08, r) * 0.6);
+    col *= 0.75 + streak * 0.5;
+    // the pupil: a black vertical slit that never blinks
+    float slit = smoothstep(0.1, 0.055, abs(p.x) * (1.0 + p.y * p.y * 6.0)) * smoothstep(0.5, 0.32, abs(p.y));
+    col *= 1.0 - slit * 0.97;
+    // a faint corona of heat haze beyond the flames
+    float corona = smoothstep(1.0, 0.45, r) * 0.25 * (0.6 + flick * 0.6);
+    float alpha = clamp(body + corona, 0.0, 1.0);
+    gl_FragColor = vec4(col * (body * 3.2 + corona * 1.4), alpha);
+  }`;
+
+// The searchlight: brightest down its core, fading at its edges (by how
+// squarely the cone's skin faces the viewer) and along its length, so it
+// reads as light in smoky air rather than a solid wedge.
+const BEAM_VERT = /* glsl */ `
+  varying vec3 vWorld;
+  varying vec3 vNormalW;
+  varying float vAlong;
+  void main() {
+    vAlong = uv.y;
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorld = wp.xyz;
+    vNormalW = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }`;
+
+const BEAM_FRAG = /* glsl */ `
+  uniform float uTime;
+  uniform float uStrength;
+  varying vec3 vWorld;
+  varying vec3 vNormalW;
+  varying float vAlong;
+  void main() {
+    vec3 V = normalize(cameraPosition - vWorld);
+    float facing = abs(dot(normalize(vNormalW), V));
+    float core = pow(facing, 2.2);
+    float along = smoothstep(0.0, 0.55, vAlong) * (0.35 + 0.65 * vAlong);
+    float smoke = 0.75 + 0.25 * sin(vWorld.x * 0.05 + vWorld.z * 0.04 - uTime * 1.3);
+    float dist = length(cameraPosition - vWorld);
+    float a = core * along * smoke * uStrength * exp(-dist * 0.0011);
+    // additive: alpha 1 so the light adds linearly (alpha-weighted it squared)
+    gl_FragColor = vec4(vec3(1.0, 0.42, 0.12) * a, 1.0);
+  }`;
+
+const BEAM_LEN = 420;
+
 function BaradDur() {
   const built = useBuilt(buildBaradDur);
-  const eyeRef = useRef<THREE.Group>(null);
-  const beamRef = useRef<THREE.Mesh>(null);
-  const eyeTex = useMemo(() => {
-    const cv = document.createElement("canvas");
-    cv.width = cv.height = 128;
-    const ctx = cv.getContext("2d")!;
-    const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
-    g.addColorStop(0, "rgba(255,240,180,1)");
-    g.addColorStop(0.28, "rgba(255,140,40,0.9)");
-    g.addColorStop(0.62, "rgba(200,50,10,0.45)");
-    g.addColorStop(1, "rgba(120,20,0,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 128, 128);
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.beginPath();
-    ctx.ellipse(64, 64, 5, 30, 0, 0, Math.PI * 2);
-    ctx.fill();
-    const tex = new THREE.CanvasTexture(cv);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  }, []);
-  useEffect(() => () => eyeTex.dispose(), [eyeTex]);
+  const eyeRef = useRef<THREE.Mesh>(null);
+  const beamRef = useRef<THREE.Group>(null);
 
-  useFrame(({ clock }) => {
-    if (eyeRef.current) eyeRef.current.rotation.y = clock.elapsedTime * 0.35;
+  const eyeMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: EYE_VERT,
+        fragmentShader: EYE_FRAG,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      }),
+    [],
+  );
+  const beam = useMemo(() => {
+    // apex at the origin, opening down -Y; the group aims it
+    const geo = new THREE.ConeGeometry(52, BEAM_LEN, 40, 1, true).translate(0, -BEAM_LEN / 2, 0);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uStrength: { value: 0.3 } },
+      vertexShader: BEAM_VERT,
+      fragmentShader: BEAM_FRAG,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    });
+    return { geo, mat };
+  }, []);
+  useEffect(
+    () => () => {
+      eyeMat.dispose();
+      beam.geo.dispose();
+      beam.mat.dispose();
+    },
+    [eyeMat, beam],
+  );
+
+  useFrame(({ clock, camera }) => {
+    const t = clock.elapsedTime;
+    eyeMat.uniforms.uTime.value = t;
+    beam.mat.uniforms.uTime.value = t;
+    beam.mat.uniforms.uStrength.value = 0.28 + Math.sin(t * 1.7) * 0.04;
+    if (eyeRef.current) eyeRef.current.quaternion.copy(camera.quaternion);
+    // the gaze sweeps slowly round the Black Land, raking the plain below
     if (beamRef.current) {
-      (beamRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.16 + Math.sin(clock.elapsedTime * 2.2) * 0.05;
+      const a = t * 0.16;
+      beamRef.current.rotation.set(0, -a, 0);
     }
   });
 
   return (
     <Grounded u={SITES.baraddur.u} v={SITES.baraddur.v}>
       <primitive object={built} />
-      <group ref={eyeRef} position={[0, 94, 0]}>
-        <sprite scale={[19, 19, 1]}>
-          <spriteMaterial map={eyeTex} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
-        </sprite>
-        <mesh ref={beamRef} position={[0, -8, 70]} rotation={[Math.PI / 2.3, 0, 0]}>
-          <coneGeometry args={[24, 170, 12, 1, true]} />
-          <meshBasicMaterial color="#ff7a22" transparent opacity={0.18} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
-        </mesh>
+      <mesh ref={eyeRef} position={[0, 99, 0]} material={eyeMat}>
+        <planeGeometry args={[26, 17]} />
+      </mesh>
+      <group ref={beamRef} position={[0, 99, 0]}>
+        {/* tipped from straight down to just below the horizon */}
+        <mesh geometry={beam.geo} material={beam.mat} rotation={[0, 0, Math.PI / 2 - 0.2]} />
       </group>
-      <Lamp color="#ff5a1e" intensity={460} distance={230} position={[0, 94, 0]} decay={1.9} />
+      <Lamp color="#ff5a1e" intensity={460} distance={230} position={[0, 95, 0]} decay={1.9} />
     </Grounded>
   );
 }
 
 function MountDoom() {
-  const cx = toWorldX(SITES.mountdoom.u);
-  const cz = toWorldZ(SITES.mountdoom.v);
-  const lavaGroup = useRef<THREE.Group>(null);
+  // the lava that runs down the flanks is painted into the ground itself
+  // (Terrain.tsx), so it follows every crag; this is the crater and its fire
   const lavaMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -1072,64 +1179,20 @@ function MountDoom() {
       }),
     [],
   );
-
-  // lava rivulets draped over the real terrain shape (world coords, y scaled by morph)
-  const lavaGeo = useMemo(() => {
-    const positions: number[] = [];
-    const indices: number[] = [];
-    const rand = rng(5150);
-    const dirs = [0.4, 1.7, 3.1, 4.4, 5.5];
-    for (const baseA of dirs) {
-      const start = positions.length / 3;
-      const steps = 14;
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const a = baseA + Math.sin(t * 5 + baseA * 3) * 0.14;
-        const dist = 8 + t * 88;
-        const px = cx + Math.cos(a) * dist;
-        const pz = cz + Math.sin(a) * dist;
-        const py = heightAt(px, pz) + 0.6;
-        const w = (1 - t * 0.6) * (1.6 + rand() * 0.8);
-        const nx = -Math.sin(a) * w;
-        const nz = Math.cos(a) * w;
-        positions.push(px + nx, py, pz + nz, px - nx, py, pz - nz);
-        if (i > 0) {
-          const b0 = start + (i - 1) * 2;
-          indices.push(b0, b0 + 1, b0 + 2, b0 + 1, b0 + 3, b0 + 2);
-        }
-      }
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
-    g.setIndex(indices);
-    g.computeVertexNormals();
-    return g;
-  }, [cx, cz]);
-
-  useEffect(() => () => { lavaGeo.dispose(); lavaMat.dispose(); }, [lavaGeo, lavaMat]);
-
+  useEffect(() => () => lavaMat.dispose(), [lavaMat]);
   useFrame(({ clock }) => {
-    if (lavaGroup.current) {
-      lavaGroup.current.scale.y = Math.max(morph.value, 0.001);
-      lavaGroup.current.visible = morph.value > 0.05;
-    }
     lavaMat.emissiveIntensity = 2.0 + Math.sin(clock.elapsedTime * 1.7) * 0.5;
   });
 
   return (
-    <>
-      <group ref={lavaGroup}>
-        <mesh geometry={lavaGeo} material={lavaMat} />
-      </group>
-      <Grounded u={SITES.mountdoom.u} v={SITES.mountdoom.v}>
-        <mesh material={lavaMat} position={[0, 1.8, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[9, 20]} />
-        </mesh>
-        <Plume position={[0, 3, 0]} color="#ff6a1a" count={130} spread={6.5} height={120} size={4} rise={18} opacity={0.7} />
-        <Plume position={[0, 6, 0]} color="#40342c" count={80} spread={10} height={180} size={7} rise={10} additive={false} opacity={0.4} />
-        <Lamp color="#ff4a12" intensity={520} distance={190} position={[0, 9, 0]} decay={1.9} />
-      </Grounded>
-    </>
+    <Grounded u={SITES.mountdoom.u} v={SITES.mountdoom.v}>
+      <mesh material={lavaMat} position={[0, 1.8, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[9, 20]} />
+      </mesh>
+      <Plume position={[0, 3, 0]} color="#ff6a1a" count={130} spread={6.5} height={120} size={4} rise={18} opacity={0.7} />
+      <Plume position={[0, 6, 0]} color="#40342c" count={80} spread={10} height={180} size={7} rise={10} additive={false} opacity={0.4} />
+      <Lamp color="#ff4a12" intensity={520} distance={190} position={[0, 9, 0]} decay={1.9} />
+    </Grounded>
   );
 }
 

@@ -8,7 +8,7 @@ import { runtime } from "@/game/runtime";
 import { input, mouse, moveAxes } from "@/input/controls";
 import { useGame } from "@/state/store";
 import { morph } from "@/three/Terrain";
-import { heightAt } from "@/three/noise";
+import { solidAt } from "@/three/obstacles";
 
 const _eye = new THREE.Vector3();
 const _look = new THREE.Vector3();
@@ -78,14 +78,23 @@ export function CameraRig() {
       if (morph.value < 1) stiffness = 1.6 + morph.value * 1.8;
     }
 
+    // lift the target eye over the land and the towers first, so the
+    // smoothing carries the camera up a tower's flank instead of the
+    // backstop below shoving it there in a few frames
+    if (s.phase === "map") {
+      const groundAtEye =
+        solidAt(THREE.MathUtils.clamp(_eye.x, 0, MAP_W), THREE.MathUtils.clamp(_eye.z, 0, MAP_H)) * morph.value;
+      if (_eye.y < groundAtEye + 8) _eye.y = groundAtEye + 8;
+    }
+
     const k = 1 - Math.exp(-stiffness * dt);
     runtime.camPos.lerp(_eye, k);
     smoothLook.current.lerp(_look, 1 - Math.exp(-4.2 * dt));
 
-    // keep the (smoothed) camera out of the mountainsides
+    // keep the (smoothed) camera out of the mountainsides and the towers
     if (s.phase === "map") {
       const groundAtCam =
-        heightAt(
+        solidAt(
           THREE.MathUtils.clamp(runtime.camPos.x, 0, MAP_W),
           THREE.MathUtils.clamp(runtime.camPos.z, 0, MAP_H),
         ) * morph.value;

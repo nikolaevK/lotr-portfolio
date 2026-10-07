@@ -385,7 +385,7 @@ const LOST_PAGES = [
   [0, 0.452, 0.261, "on the winds over Weathertop"],
   [1, 0.306, 0.253, "above the towers of the Grey Havens"],
   [2, 0.52, 0.437, "over the eaves of Fangorn"],
-  [3, 0.507, 0.352, "at the Gates of Moria"],
+  [3, 0.499, 0.352, "at the Gates of Moria"],
   [4, 0.795, 0.168, "in the smoke of the Iron Hills"],
   [5, 0.54, 0.5, "over the plains of Rohan"],
   [6, 0.634, 0.64, "in the gardens of Ithilien"],
@@ -411,7 +411,7 @@ Object.entries({
 // voice lines: 11 fly-over triggers + 3 journey events (from src/audio/voice.ts)
 const VOICE = [
   ["mordor", 5, "mordor.mp3", "The Black Speech of Mordor rolls from Barad-dûr…", 0.727, 0.583, 320],
-  ["moria", null, "moria.mp3", "Gandalf's voice thunders from the deeps of Moria…", 0.507, 0.352, 130],
+  ["moria", null, "moria.mp3", "Gandalf's voice thunders from the deeps of Moria…", 0.499, 0.352, 130],
   ["shire", 1, "shire.mp3", "A song of the Shire drifts up from Hobbiton…", 0.352, 0.262, 210],
   ["rivendell", 2, "rivendell.mp3", "Elven voices echo through the Hidden Valley…", 0.502, 0.252, 150],
   ["lorien", 2, "lorien.mp3", "The Lady of the Wood whispers on the golden air…", 0.548, 0.372, 150],

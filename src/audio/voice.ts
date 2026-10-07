@@ -24,7 +24,7 @@ export interface VoiceLine {
 
 export const VOICE_LINES: VoiceLine[] = [
   { id: "mordor", file: "mordor.mp3", caption: "The Black Speech of Mordor rolls from Barad-dûr…", u: 0.727, v: 0.583, radius: 320 },
-  { id: "moria", file: "moria.mp3", caption: "Gandalf's voice thunders from the deeps of Moria…", u: 0.507, v: 0.352, radius: 130 },
+  { id: "moria", file: "moria.mp3", caption: "Gandalf's voice thunders from the deeps of Moria…", u: 0.499, v: 0.352, radius: 130 },
   { id: "shire", file: "shire.mp3", caption: "A song of the Shire drifts up from Hobbiton…", u: 0.352, v: 0.262, radius: 210 },
   { id: "rivendell", file: "rivendell.mp3", caption: "Elven voices echo through the Hidden Valley…", u: 0.502, v: 0.252, radius: 150 },
   { id: "lorien", file: "lorien.mp3", caption: "The Lady of the Wood whispers on the golden air…", u: 0.548, v: 0.372, radius: 150 },

@@ -10,6 +10,8 @@ import { useContent } from "@/state/content";
 import { CURSORS, MAP_W, MAP_H } from "@/data/content";
 import { voice } from "@/audio/voice";
 import { audio } from "@/audio/engine";
+import { loadTerrainData } from "@/three/terrainData";
+import { solidAt } from "@/three/obstacles";
 
 export default function App() {
   const cursor = useGame((s) => s.cursor);
@@ -33,9 +35,11 @@ export default function App() {
     };
   }, [escape, toggleOverview]);
 
-  // live content from Turso replaces the bundled fallback once fetched
+  // live content from Turso replaces the bundled fallback once fetched; the
+  // terrain bake starts now too, so it is done while the cover is being read
   useEffect(() => {
     useContent.getState().hydrate();
+    loadTerrainData();
   }, []);
 
   // auto quality: modest hardware starts low (user can toggle in HUD)
@@ -57,6 +61,7 @@ export default function App() {
         runtime.pos.x = u * MAP_W;
         runtime.pos.z = v * MAP_H;
         runtime.vel.set(0, 0, 0);
+        runtime.speed = 0;
         runtime.autoTarget = null;
         if (typeof heading === "number") runtime.heading = heading;
         if (typeof altitude === "number") runtime.pos.y = altitude;
@@ -65,6 +70,9 @@ export default function App() {
         x: runtime.pos.x,
         y: runtime.pos.y,
         z: runtime.pos.z,
+        // height above the land or landmark below — what flight physics holds
+        agl: runtime.pos.y - solidAt(runtime.pos.x, runtime.pos.z),
+        bank: runtime.bank,
         heading: runtime.heading,
         speed: runtime.speed,
         overview: useGame.getState().overview,

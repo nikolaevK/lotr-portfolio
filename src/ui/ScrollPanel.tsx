@@ -87,6 +87,28 @@ function Bullets({ items, fold = 4 }: { items: string[]; fold?: number }) {
   );
 }
 
+/** A gilded rule with a lozenge and curling ends, set under each title. */
+function Flourish() {
+  return (
+    <svg viewBox="0 0 260 18" aria-hidden style={{ display: "block", width: 240, height: 17, margin: "0 auto 16px" }}>
+      <defs>
+        {/* user-space: a horizontal stroke has a zero-height bbox, which voids an objectBoundingBox gradient */}
+        <linearGradient id="flourishGold" gradientUnits="userSpaceOnUse" x1="8" y1="0" x2="252" y2="0">
+          <stop offset="0" stopColor="#a8781e" stopOpacity="0" />
+          <stop offset=".25" stopColor="#a8781e" />
+          <stop offset=".5" stopColor="#e2c06d" />
+          <stop offset=".75" stopColor="#a8781e" />
+          <stop offset="1" stopColor="#a8781e" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d="M8,9 H112 M148,9 H252" stroke="url(#flourishGold)" strokeWidth="1.2" fill="none" />
+      <path d="M112,9 q6,-7 12,0 q-6,7 -12,0 M148,9 q-6,-7 -12,0 q6,7 12,0" stroke="#a8781e" strokeWidth="1.1" fill="none" />
+      <path d="M130,2 L136,9 L130,16 L124,9 Z" fill="#c9963c" stroke="#8a6420" strokeWidth=".8" />
+      <circle cx="130" cy="9" r="1.6" fill="#f4dc9a" />
+    </svg>
+  );
+}
+
 function SectionRule({ label }: { label: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "22px 0 12px" }}>
@@ -220,7 +242,8 @@ function ScrollBody({ region, isNew }: { region: RegionContent; isNew: boolean }
       <h2 className="cinzel" style={{ fontWeight: 700, fontSize: 30, lineHeight: 1.15, margin: "10px 0 6px", textAlign: "center", color: "#2c1f0d", textWrap: "balance" }}>
         {t.title}
       </h2>
-      <div style={{ fontSize: 17, fontStyle: "italic", color: FADED, marginBottom: 14, textAlign: "center", textWrap: "pretty" }}>{t.sub}</div>
+      <div style={{ fontSize: 17, fontStyle: "italic", color: FADED, marginBottom: 10, textAlign: "center", textWrap: "pretty" }}>{t.sub}</div>
+      <Flourish />
 
       {isNew && (
         <div
@@ -261,7 +284,7 @@ function ScrollBody({ region, isNew }: { region: RegionContent; isNew: boolean }
         {region.characters.length > 0 && (
           <aside className="scroll-char-rail" style={{ flex: "0 0 216px", display: "flex", flexDirection: "column", gap: 16, paddingTop: 4 }}>
             {region.characters.map((c) => (
-              <CharacterNiche key={c.slug} c={c} glyph={region.glyph} />
+              <CharacterNiche key={c.slug} c={c} glyph={region.glyph} ring={region.ring} />
             ))}
           </aside>
         )}
@@ -348,7 +371,20 @@ export function ScrollPanel() {
     "repeating-linear-gradient(90deg, rgba(30,16,4,.22) 0 2px, transparent 2px 9px, rgba(60,35,12,.16) 9px 12px, transparent 12px 21px), linear-gradient(#9a6b33 0%, #5c3a18 38%, #331d0a 58%, #6b4520 100%)";
 
   const knob = (side: "left" | "right") => (
-    <div className="scroll-knob" style={{ position: "absolute", [side]: -36, top: 2, width: 26, height: 26 }}>
+    <div className="scroll-knob" style={{ position: "absolute", [side]: -40, top: 0, width: 30, height: 30 }}>
+      {/* turned collar joining the finial to the rod */}
+      <div
+        style={{
+          position: "absolute",
+          [side === "left" ? "right" : "left"]: -8,
+          top: 7,
+          width: 12,
+          height: 16,
+          borderRadius: 3,
+          background: "linear-gradient(#b08442 0%, #6b4520 45%, #3b220c 70%, #8a5c26 100%)",
+          boxShadow: "0 2px 4px rgba(0,0,0,.45)",
+        }}
+      />
       <div
         style={{
           position: "absolute",
@@ -421,28 +457,25 @@ export function ScrollPanel() {
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "min(860px, 94vw)", filter: "drop-shadow(0 36px 60px rgba(0,0,0,.75))" }}>
         {roller}
         <div style={{ overflow: "hidden", animation: "unrollH .95s cubic-bezier(.25,1,.4,1) both", maxHeight: "76vh", margin: "-6px 4px", position: "relative", zIndex: 1 }}>
-          <div style={{ filter: "url(#roughPaper)" }}>
-            <div
-              style={{
-                background: PARCHMENT_BG,
-                position: "relative",
-                boxShadow: EDGE_BURN,
-              }}
-            >
-              <div style={parchmentOverlay} />
-              {/* the curl of the roll: shaded bands where the parchment curves */}
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  background:
-                    "linear-gradient(90deg, rgba(70,45,15,.28), rgba(255,244,214,.14) 22px, transparent 44px), linear-gradient(270deg, rgba(70,45,15,.28), rgba(255,244,214,.14) 22px, transparent 44px), linear-gradient(180deg, rgba(60,38,12,.30), transparent 26px), linear-gradient(0deg, rgba(60,38,12,.30), transparent 26px)",
-                  pointerEvents: "none",
-                }}
-              />
-              <div className="scroll-sheet" style={{ position: "relative", maxHeight: "calc(76vh - 58px)", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "32px 46px 28px" }}>
-                <ScrollBody key={region.id} region={region} isNew={isNew} />
+          <div style={{ position: "relative" }}>
+            {/* the paper on its own layer: the rough-edge displacement filter
+                frays the sheet, but never the words or the figure on it */}
+            <div style={{ position: "absolute", inset: 0, filter: "url(#roughPaper)", pointerEvents: "none" }}>
+              <div style={{ position: "absolute", inset: 0, background: PARCHMENT_BG, boxShadow: EDGE_BURN }}>
+                <div style={parchmentOverlay} />
+                {/* the curl of the roll: shaded bands where the parchment curves */}
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(90deg, rgba(70,45,15,.28), rgba(255,244,214,.14) 22px, transparent 44px), linear-gradient(270deg, rgba(70,45,15,.28), rgba(255,244,214,.14) 22px, transparent 44px), linear-gradient(180deg, rgba(60,38,12,.30), transparent 26px), linear-gradient(0deg, rgba(60,38,12,.30), transparent 26px)",
+                  }}
+                />
               </div>
+            </div>
+            <div className="scroll-sheet" style={{ position: "relative", maxHeight: "calc(76vh - 58px)", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "32px 46px 28px" }}>
+              <ScrollBody key={region.id} region={region} isNew={isNew} />
             </div>
           </div>
         </div>

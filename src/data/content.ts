@@ -289,7 +289,7 @@ export const LOST_PAGES: LostPage[] = [
   { id: 0, x: 0.452, y: 0.261, hint: "on the winds over Weathertop" },
   { id: 1, x: 0.306, y: 0.253, hint: "above the towers of the Grey Havens" },
   { id: 2, x: 0.520, y: 0.437, hint: "over the eaves of Fangorn" },
-  { id: 3, x: 0.507, y: 0.352, hint: "at the Gates of Moria" },
+  { id: 3, x: 0.499, y: 0.352, hint: "at the Gates of Moria" },
   { id: 4, x: 0.795, y: 0.168, hint: "in the smoke of the Iron Hills" },
   { id: 5, x: 0.540, y: 0.500, hint: "over the plains of Rohan" },
   { id: 6, x: 0.634, y: 0.640, hint: "in the gardens of Ithilien" },
@@ -348,7 +348,8 @@ export const SITES = {
   hobbiton: { u: 0.352, v: 0.258, r: 70, title: "Hobbiton", text: "A well-ordered land of pipe-smoke, second breakfasts and round green doors. The beacon here marks a chapter — click it to travel." },
   rivendell: { u: 0.502, v: 0.252, r: 60, title: "Rivendell", text: "The Last Homely House east of the Sea — counsel and song in the Hidden Valley. The beacon here marks a chapter — click it to travel." },
   lorien: { u: 0.548, v: 0.372, r: 55, title: "Lothlórien", text: "The Golden Wood, where mallorn leaves fall like coins of light." },
-  moria: { u: 0.507, v: 0.352, r: 55, title: "The West-gate of Moria", text: "Doors of Durin, Lord of Moria. Speak, friend, and enter." },
+  // the West-gate stands at the foot of the range's west face, not on its crest
+  moria: { u: 0.499, v: 0.352, r: 55, title: "The West-gate of Moria", text: "Doors of Durin, Lord of Moria. Speak, friend, and enter." },
   erebor: { u: 0.664, v: 0.240, r: 70, title: "Erebor", text: "The Lonely Mountain — dwarven halls beneath the peak, and a hoard long remembered. The beacon here marks a chapter — click it to travel." },
   minastirith: { u: 0.607, v: 0.607, r: 65, title: "Minas Tirith", text: "The White City, seven-walled, ever watching the East. The beacon here marks a chapter — click it to travel." },
   baraddur: { u: 0.727, v: 0.583, r: 40, title: "Barad-dûr", text: "The Dark Tower. The Eye turns hither — do not linger." },

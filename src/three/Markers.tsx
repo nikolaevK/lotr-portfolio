@@ -6,9 +6,11 @@ import * as THREE from "three";
 import { toWorldX, toWorldZ, type Region } from "@/data/content";
 import { useContent } from "@/state/content";
 import { heightAt } from "@/three/noise";
+import { solidAt } from "@/three/obstacles";
 import { morph } from "@/three/Terrain";
 import { useGame } from "@/state/store";
 import { travelTo } from "@/game/actions";
+import { runtime } from "@/game/runtime";
 
 function cinzelFamily(): string {
   if (typeof document === "undefined") return "serif";
@@ -58,19 +60,32 @@ function makeLabelTexture(text: string, visited: boolean, ring: string) {
   return tex;
 }
 
+// A pillar of light, not a painted tube: brightest along its core (where the
+// surface faces the viewer), soft at its edges, and faded out when the camera
+// is close enough to fly through it.
 const beamVertex = /* glsl */ `
   varying float vY;
+  varying vec3 vWorld;
+  varying vec3 vNormalW;
   void main() {
     vY = uv.y;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorld = wp.xyz;
+    vNormalW = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * wp;
   }`;
 const beamFragment = /* glsl */ `
   uniform vec3 uColor;
   uniform float uOpacity;
   varying float vY;
+  varying vec3 vWorld;
+  varying vec3 vNormalW;
   void main() {
-    float a = (1.0 - vY) * (1.0 - vY) * uOpacity;
-    gl_FragColor = vec4(uColor, a);
+    vec3 V = normalize(cameraPosition - vWorld);
+    float core = pow(abs(dot(normalize(vNormalW), V)), 1.6);
+    float near = smoothstep(18.0, 70.0, length(cameraPosition.xz - vWorld.xz));
+    float a = (1.0 - vY) * (1.0 - vY) * uOpacity * core * near;
+    gl_FragColor = vec4(uColor * a, 1.0);
   }`;
 
 function Marker({ region }: { region: Region }) {
@@ -85,6 +100,9 @@ function Marker({ region }: { region: Region }) {
   const x = toWorldX(region.x);
   const z = toWorldZ(region.y);
   const baseY = useMemo(() => Math.max(heightAt(x, z), 2), [x, z]);
+  // the banner floats clear of whatever stands here — inside the Tower of
+  // Ecthelion or Erebor's gate it was cut in half by the masonry
+  const labelY = useMemo(() => Math.max(50, solidAt(x, z) - baseY + 16), [x, z, baseY]);
 
   const label = region[tone].label;
   useEffect(() => {
@@ -113,7 +131,7 @@ function Marker({ region }: { region: Region }) {
         blending: THREE.AdditiveBlending,
         uniforms: {
           uColor: { value: new THREE.Color(region.ring) },
-          uOpacity: { value: 0.3 },
+          uOpacity: { value: 0.5 },
         },
         vertexShader: beamVertex,
         fragmentShader: beamFragment,
@@ -127,7 +145,7 @@ function Marker({ region }: { region: Region }) {
       group.current.position.y = baseY * morph.value;
       group.current.visible = morph.value > 0.05;
     }
-    beamMat.uniforms.uOpacity.value = (0.22 + Math.sin(t * 2.1) * 0.08) * (hover ? 1.6 : 1);
+    beamMat.uniforms.uOpacity.value = (0.42 + Math.sin(t * 2.1) * 0.12) * (hover ? 1.5 : 1);
     if (ring.current) {
       const k = 1 + Math.sin(t * 2.6) * 0.12;
       ring.current.scale.setScalar(k);
@@ -136,6 +154,13 @@ function Marker({ region }: { region: Region }) {
     if (sprite.current) {
       const s = hover ? 1.12 : 1;
       sprite.current.scale.set(44 * s, 9.1 * s, 1);
+      // fade out as the steed arrives: the tale's scroll opens here, and a
+      // banner overhead would only crowd the top of the screen and the HUD.
+      // Map view keeps every banner — that is where they are read.
+      const d = Math.hypot(runtime.pos.x - x, runtime.pos.z - z);
+      (sprite.current.material as THREE.SpriteMaterial).opacity = useGame.getState().overview
+        ? 1
+        : THREE.MathUtils.smoothstep(d, 110, 230);
     }
   });
 
@@ -159,7 +184,7 @@ function Marker({ region }: { region: Region }) {
       </mesh>
       {/* name banner */}
       {labelTex && (
-        <sprite ref={sprite} position={[0, 50, 0]} scale={[44, 9.1, 1]}>
+        <sprite ref={sprite} position={[0, labelY, 0]} scale={[44, 9.1, 1]} renderOrder={10}>
           <spriteMaterial map={labelTex} transparent depthWrite={false} />
         </sprite>
       )}

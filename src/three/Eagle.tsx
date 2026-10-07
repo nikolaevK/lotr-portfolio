@@ -10,6 +10,7 @@ import { morph } from "@/three/Terrain";
 import { audio } from "@/audio/engine";
 import { createFlightState, stepFlight, EAGLE_TUNING } from "@/three/flight";
 import { heightToNormal } from "@/three/materials";
+import { mergeRigid } from "@/three/mergeRig";
 
 // ── golden-eagle palette ─────────────────────────────────────────────────────
 const BODY_DK = new THREE.Color("#42301c");
@@ -91,6 +92,35 @@ function featherMaterial(cv: HTMLCanvasElement) {
   });
   mat.normalScale.set(0.7, 0.7);
   mat.envMapIntensity = 0.9;
+  // three draws a transparent two-sided material in two one-sided passes,
+  // where the two-sided normal flip (and so the patch below) never runs
+  mat.forceSinglePass = true;
+  // One wing's feathers are mirrored by a negative scale. A plain mesh gets its
+  // winding flipped by three for that; an instance does not, so carry the
+  // instance's handedness through to the two-sided normal flip ourselves.
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying float vMirror;")
+      .replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+         #ifdef USE_INSTANCING
+           vMirror = determinant(mat3(instanceMatrix)) < 0.0 ? -1.0 : 1.0;
+         #else
+           vMirror = 1.0;
+         #endif`,
+      );
+    // includes are only expanded after onBeforeCompile, so patch the chunk text
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying float vMirror;")
+      .replace(
+        "#include <normal_fragment_begin>",
+        THREE.ShaderChunk.normal_fragment_begin.replace(
+          "float faceDirection = gl_FrontFacing ? 1.0 : - 1.0;",
+          "float faceDirection = (gl_FrontFacing ? 1.0 : - 1.0) * vMirror;",
+        ),
+      );
+  };
   return { mat, textures: [map, normalMap] };
 }
 
@@ -122,7 +152,8 @@ function makeSpeckleHeight() {
 }
 
 interface Feather {
-  mesh: THREE.Mesh;
+  /** transform proxy — its matrix is copied into the shared feather instances */
+  mesh: THREE.Object3D;
   fan: number; // base fan angle (positive = trailing)
   ratio: number; // 0 root … 1 outermost (dynamics scale)
   width: number;
@@ -156,6 +187,9 @@ interface EagleRig {
   legs: THREE.Group[];
   eyeMat: THREE.MeshStandardMaterial;
   textures: THREE.Texture[];
+  inner: THREE.Group;
+  /** every feather card, drawn as one instanced mesh per material */
+  featherSets: { mesh: THREE.InstancedMesh; proxies: THREE.Object3D[] }[];
 }
 
 function buildEagle(): EagleRig {
@@ -240,15 +274,33 @@ function buildEagle(): EagleRig {
   const hullMesh = new THREE.Mesh(hull, bodyMat);
   hullMesh.castShadow = true;
   bodyGroup.add(hullMesh);
+  // The caps, fairings and arms share the hull's vertex-coloured material, so
+  // they need colours of their own — a missing attribute reads as black.
+  // Same shading as the hull rings, keyed on the normal's height.
+  const bodyColors = (geo: THREE.BufferGeometry, nape: number) => {
+    const n = geo.getAttribute("normal");
+    const c = new Float32Array(n.count * 3);
+    for (let i = 0; i < n.count; i++) {
+      const cy = n.getY(i);
+      tmpC.copy(BODY).lerp(BODY_DK, THREE.MathUtils.smoothstep(cy, 0.4, 0.95) * 0.8);
+      tmpC.lerp(BODY_LT, THREE.MathUtils.smoothstep(-cy, 0.1, 0.8) * 0.85);
+      tmpC.lerp(NAPE, Math.min(1, THREE.MathUtils.smoothstep(cy, 0.15, 0.9) * nape));
+      c[i * 3] = tmpC.r;
+      c[i * 3 + 1] = tmpC.g;
+      c[i * 3 + 2] = tmpC.b;
+    }
+    geo.setAttribute("color", new THREE.BufferAttribute(c, 3));
+    return geo;
+  };
   // nose & tail caps
-  const capF = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 8), bodyMat);
+  const capF = new THREE.Mesh(bodyColors(new THREE.SphereGeometry(0.4, 10, 8), 0.9), bodyMat);
   capF.position.set(2.15, 0.1, 0);
-  const capB = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 6), bodyMat);
+  const capB = new THREE.Mesh(bodyColors(new THREE.SphereGeometry(0.26, 8, 6), 0), bodyMat);
   capB.position.set(-2.6, 0.14, 0);
   bodyGroup.add(capF, capB);
   // shoulder fairings
   for (const sd of [-1, 1]) {
-    const fair = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), bodyMat);
+    const fair = new THREE.Mesh(bodyColors(new THREE.SphereGeometry(0.42, 8, 6), 0), bodyMat);
     fair.position.set(0.5, 0.42, sd * 0.55);
     fair.scale.set(1.4, 0.8, 1.0);
     bodyGroup.add(fair);
@@ -293,6 +345,7 @@ function buildEagle(): EagleRig {
   mandible.add(mand);
   headGroup.add(mandible);
   // fierce brows + amber eyes with pupils
+  const pupilMat = new THREE.MeshBasicMaterial({ color: "#100801" });
   for (const sd of [-1, 1]) {
     const brow = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.07, 0.12), headMat);
     brow.position.set(0.22, 0.19, sd * 0.26);
@@ -302,7 +355,7 @@ function buildEagle(): EagleRig {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), eyeMat);
     eye.position.set(0.23, 0.1, sd * 0.29);
     headGroup.add(eye);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), new THREE.MeshBasicMaterial({ color: "#100801" }));
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), pupilMat);
     pupil.position.set(0.28, 0.1, sd * 0.34);
     headGroup.add(pupil);
   }
@@ -314,14 +367,21 @@ function buildEagle(): EagleRig {
   const featherGeo = new THREE.PlaneGeometry(1, 1);
   featherGeo.rotateX(-Math.PI / 2);
   featherGeo.translate(0, 0, 0.5);
+  const featherSlots = new Map<THREE.Material, THREE.Object3D[]>();
+  const featherProxy = (mat: THREE.Material) => {
+    const o = new THREE.Object3D();
+    const list = featherSlots.get(mat);
+    if (list) list.push(o);
+    else featherSlots.set(mat, [o]);
+    return o;
+  };
 
   const mkFeather = (
     parent: THREE.Object3D, mat: THREE.Material, sd: number,
     width: number, len: number, fan: number, ratio: number,
     px: number, py: number, pz: number,
   ): Feather => {
-    const mesh = new THREE.Mesh(featherGeo, mat);
-    mesh.castShadow = true;
+    const mesh = featherProxy(mat);
     mesh.scale.set(width, 1, len * sd);
     mesh.position.set(px, py, pz * sd);
     mesh.rotation.order = "YXZ";
@@ -332,7 +392,7 @@ function buildEagle(): EagleRig {
 
   // ── wings ──
   const wings: WingSide[] = [];
-  const armGeo = new THREE.CapsuleGeometry(0.16, 1, 3, 7);
+  const armGeo = bodyColors(new THREE.CapsuleGeometry(0.16, 1, 3, 7), 0);
   for (const sd of [-1, 1] as const) {
     const S = new THREE.Vector3(S0.x, S0.y, S0.z * sd);
     const E0 = S.clone().add(new THREE.Vector3(E_OFF.x, E_OFF.y, E_OFF.z * sd));
@@ -418,13 +478,12 @@ function buildEagle(): EagleRig {
   }
   // tail coverts — gold above, pale below, hiding the quill roots
   for (let i = -1; i <= 1; i++) {
-    const upper = new THREE.Mesh(featherGeo, goldMat);
+    const upper = featherProxy(goldMat);
     upper.scale.set(0.55, 1, 1.15);
     upper.position.set(0, 0.055, 0.06);
     upper.rotation.set(0.06 * i, i * 0.3, 0);
-    upper.castShadow = true;
     tailInner.add(upper);
-    const under = new THREE.Mesh(featherGeo, tailMat);
+    const under = featherProxy(tailMat);
     under.scale.set(0.5, 1, 0.9);
     under.position.set(0, -0.05, 0.05);
     under.rotation.set(-0.05 * i, i * 0.34, 0);
@@ -464,8 +523,26 @@ function buildEagle(): EagleRig {
     legs.push(leg);
   }
 
-  return { group, bodyGroup, headGroup, mandible, tailPivot, tailFeathers, wings, legs, eyeMat, textures };
+  // ── collapse rigid parts; feathers become one instanced draw per material ──
+  mergeRigid(headGroup, new Set([mandible]));
+  mergeRigid(mandible);
+  for (const leg of legs) mergeRigid(leg);
+  const featherSets = [...featherSlots].map(([mat, proxies]) => {
+    const mesh = new THREE.InstancedMesh(featherGeo, mat, proxies.length);
+    mesh.castShadow = true;
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    inner.add(mesh);
+    return { mesh, proxies };
+  });
+
+  return { group, bodyGroup, headGroup, mandible, tailPivot, tailFeathers, wings, legs, eyeMat, textures, inner, featherSets };
 }
+
+const _invInner = new THREE.Matrix4();
+const _rel = new THREE.Matrix4();
+const _S = new THREE.Vector3();
+const _wP = new THREE.Vector3();
 
 // asymmetric flap wave — fast downstroke, slow recovery
 const wave = (p: number) => Math.sin(p + 0.45 * Math.sin(p));
@@ -505,6 +582,9 @@ export function Eagle() {
           const mat = m.material as THREE.Material | THREE.Material[];
           if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
           else mat?.dispose();
+          // instance buffers and bone textures are the mesh's own GPU memory
+          if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose();
+          if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.dispose();
         }
       });
       for (const t of rig.textures) t.dispose();
@@ -562,10 +642,10 @@ export function Eagle() {
 
     for (const wing of rig.wings) {
       const sd = wing.sd;
-      const S = new THREE.Vector3(S0.x, S0.y, S0.z * sd);
+      const S = _S.set(S0.x, S0.y, S0.z * sd);
       const eP = _v.set(0, 0, 0);
       rotAboutX(eP, S, wing.E0, -sd * phi1);
-      const wP = new THREE.Vector3();
+      const wP = _wP;
       rotAboutX(wP, S, wing.W0, -sd * phi1);
       rotAboutX(wP, eP, wP, -sd * phi2);
 
@@ -625,6 +705,13 @@ export function Eagle() {
 
     // beak world position for the cry ring
     rig.group.updateMatrixWorld(true);
+    _invInner.copy(rig.inner.matrixWorld).invert();
+    for (const set of rig.featherSets) {
+      for (let i = 0; i < set.proxies.length; i++) {
+        set.mesh.setMatrixAt(i, _rel.multiplyMatrices(_invInner, set.proxies[i].matrixWorld));
+      }
+      set.mesh.instanceMatrix.needsUpdate = true;
+    }
     rig.headGroup.getWorldPosition(runtime.mouthPos);
     _v2.set(Math.cos(runtime.heading), 0, Math.sin(runtime.heading));
     runtime.mouthDir.copy(_v2);

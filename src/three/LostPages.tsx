@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { toWorldX, toWorldZ } from "@/data/content";
 import { useContent } from "@/state/content";
-import { heightAt } from "@/three/noise";
+import { solidAt } from "@/three/obstacles";
 import { morph } from "@/three/Terrain";
 import { runtime } from "@/game/runtime";
 import { game, useGame } from "@/state/store";
@@ -47,7 +47,9 @@ export function LostPages() {
       lostPages.map((p) => {
         const x = toWorldX(p.x);
         const z = toWorldZ(p.y);
-        return { id: p.id, x, z, baseY: Math.max(heightAt(x, z), 2) };
+        // above whatever stands there — a page over Fangorn hung inside the
+        // tree crowns, and the one at Moria inside the gate's cliff
+        return { id: p.id, x, z, baseY: Math.max(solidAt(x, z), 2) };
       }),
     [lostPages],
   );
@@ -100,9 +102,14 @@ export function LostPages() {
       const y = spot.baseY * morph.value + 12 + Math.sin(t * 1.4 + i * 2.1) * 1.8;
       g.position.set(spot.x, y, spot.z);
       g.rotation.y = t * 0.9 + i;
-      // collect on fly-through
-      const d = runtime.pos.distanceTo(g.position);
-      if (d < 22 && st.phase === "map") st.collectPage(spot.id);
+      // collect on fly-over: a cylinder, not a sphere — the steed climbs early
+      // for rising ground ahead, so it can pass well above a page set in front
+      // of a ridge (the Gates of Moria) and must still take it
+      const dx = runtime.pos.x - g.position.x;
+      const dz = runtime.pos.z - g.position.z;
+      if (dx * dx + dz * dz < 22 * 22 && Math.abs(runtime.pos.y - g.position.y) < 40 && st.phase === "map") {
+        st.collectPage(spot.id);
+      }
     }
   });
 

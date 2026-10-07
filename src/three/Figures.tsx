@@ -44,7 +44,7 @@ const FIGURES: FigureDef[] = [
   // the Balrog of Morgoth — risen onto the threshold slab before the Doors of Durin
   { name: "balrog", u: SITES.moria.u, v: SITES.moria.v, dx: -4.5, dz: 0, height: 24, rotY: -Math.PI / 2, onStructure: 1.4, fire: true },
   // Gandalf on the Mithlond quay deck, turned toward the white ship
-  { name: "gandalf", u: SITES.havens.u, v: SITES.havens.v, dx: 1, dz: -1, height: 6.5, rotY: -1.35, onStructure: 2.4 },
+  { name: "gandalf", u: SITES.havens.u, v: SITES.havens.v, dx: 1, dz: -1, height: 8, rotY: -1.35, onStructure: 2.4 },
   // Sauron in the heart of Mordor, at the Black Land's marker between Orodruin and the Tower
   { name: "sauron", u: 0.713, v: 0.588, dx: 8, dz: 6, height: 15, rotY: -Math.PI / 2 },
 ];

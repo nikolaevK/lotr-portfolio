@@ -41,13 +41,14 @@ const P = (
 const PRESETS: Record<string, Preset> = {
   clear: P("#d9c6a0", 0.00085, "#ffe7b8", 2.7, "#b9c8d8", "#8a7a5c", 0.85, "#6f8fb8", "#e8cf9e", "#f6efe0", 0.8),
   shire: P("#cfe0b0", 0.001, "#fff3c8", 3.1, "#cfe0c0", "#7f8a58", 0.95, "#7fa8c8", "#eadfae", "#fbf6e6", 0.85),
-  elf: P("#ecd9a8", 0.0009, "#ffd76a", 3.5, "#ffe9b0", "#907a4a", 1.0, "#8fa3c0", "#ffe3a0", "#fff3d8", 0.72),
+  elf: P("#ecd9a8", 0.0009, "#ffdf92", 3.3, "#ffe9b0", "#907a4a", 1.0, "#8fa3c0", "#ffe3a0", "#fff3d8", 0.72),
   dwarf: P("#b9ada4", 0.0016, "#ffc89e", 2.2, "#b0a8a0", "#6a5c50", 0.8, "#8a93a4", "#d8c2a4", "#d9cfc4", 0.9),
   gondor: P("#e4e9ee", 0.00062, "#fff6e2", 3.2, "#dfe8f2", "#95928a", 1.0, "#7d9cc4", "#eef0e8", "#ffffff", 0.85),
   mordor: P("#2e1310", 0.0034, "#7a2a16", 1.05, "#3a1a14", "#241010", 0.5, "#1c0f14", "#5c1f12", "#4a2620", 0.95),
 };
 
 const SUN_DIR = new THREE.Vector3(-0.45, 0.5, -0.42).normalize();
+const _c = new THREE.Color();
 
 /**
  * The hemisphere light was standing in for ambient light. Now that
@@ -89,6 +90,7 @@ export function Weather() {
     tgt: clonePreset(PRESETS.clear),
     mix: new THREE.Color(),
     flash: 0,
+    mapFog: 1, // fog scale, eased toward 0.5 in map view
     nextStrike: 6,
     clock: 0,
   });
@@ -129,7 +131,7 @@ export function Weather() {
       t = t * t * (3 - 2 * t);
       t *= morph.value;
       weights[r.id] = t;
-      if (t > maxW) maxW = t;
+      if (t > maxW && PRESETS[r.id]) maxW = t;
       if (d < bestD) {
         bestD = d;
         bestZone = d < 310 ? r.id : "clear";
@@ -141,37 +143,57 @@ export function Weather() {
       game().setWeatherZone(bestZone);
     }
 
-    // ── blend presets: start clear, fold each zone in by weight ──
+    // ── blend presets: a weighted average, with the weights sharpened so the
+    // nearest land's character dominates. (Folding zones in one after another
+    // let whichever came last in the list bleed in at half strength — Minas
+    // Tirith wore half of Mordor's gloom.) Open country between zones stays
+    // clear rather than becoming a muddy mix of all of them.
     const tgt = st.tgt;
     const c = PRESETS.clear;
-    tgt.fog.copy(c.fog);
-    tgt.fogDensity = c.fogDensity;
-    tgt.sun.copy(c.sun);
-    tgt.sunI = c.sunI;
-    tgt.hemiSky.copy(c.hemiSky);
-    tgt.hemiGround.copy(c.hemiGround);
-    tgt.hemiI = c.hemiI;
-    tgt.skyTop.copy(c.skyTop);
-    tgt.skyHorizon.copy(c.skyHorizon);
-    tgt.cloud.copy(c.cloud);
-    tgt.cloudO = c.cloudO;
+    const wc = (1 - maxW) * (1 - maxW) + 1e-4;
+    let total = wc;
+    tgt.fog.copy(c.fog).multiplyScalar(wc);
+    tgt.fogDensity = c.fogDensity * wc;
+    tgt.sun.copy(c.sun).multiplyScalar(wc);
+    tgt.sunI = c.sunI * wc;
+    tgt.hemiSky.copy(c.hemiSky).multiplyScalar(wc);
+    tgt.hemiGround.copy(c.hemiGround).multiplyScalar(wc);
+    tgt.hemiI = c.hemiI * wc;
+    tgt.skyTop.copy(c.skyTop).multiplyScalar(wc);
+    tgt.skyHorizon.copy(c.skyHorizon).multiplyScalar(wc);
+    tgt.cloud.copy(c.cloud).multiplyScalar(wc);
+    tgt.cloudO = c.cloudO * wc;
     for (const r of regions) {
-      const w = weights[r.id];
-      if (w <= 0.001) continue;
+      const w0 = weights[r.id];
+      if (w0 <= 0.001) continue;
       const p = PRESETS[r.id];
       if (!p) continue; // admin-added region without a compiled weather preset stays clear
-      tgt.fog.lerp(p.fog, w);
-      tgt.fogDensity = THREE.MathUtils.lerp(tgt.fogDensity, p.fogDensity, w);
-      tgt.sun.lerp(p.sun, w);
-      tgt.sunI = THREE.MathUtils.lerp(tgt.sunI, p.sunI, w);
-      tgt.hemiSky.lerp(p.hemiSky, w);
-      tgt.hemiGround.lerp(p.hemiGround, w);
-      tgt.hemiI = THREE.MathUtils.lerp(tgt.hemiI, p.hemiI, w);
-      tgt.skyTop.lerp(p.skyTop, w);
-      tgt.skyHorizon.lerp(p.skyHorizon, w);
-      tgt.cloud.lerp(p.cloud, w);
-      tgt.cloudO = THREE.MathUtils.lerp(tgt.cloudO, p.cloudO, w);
+      const w = w0 * w0 * w0;
+      total += w;
+      tgt.fog.add(_c.copy(p.fog).multiplyScalar(w));
+      tgt.fogDensity += p.fogDensity * w;
+      tgt.sun.add(_c.copy(p.sun).multiplyScalar(w));
+      tgt.sunI += p.sunI * w;
+      tgt.hemiSky.add(_c.copy(p.hemiSky).multiplyScalar(w));
+      tgt.hemiGround.add(_c.copy(p.hemiGround).multiplyScalar(w));
+      tgt.hemiI += p.hemiI * w;
+      tgt.skyTop.add(_c.copy(p.skyTop).multiplyScalar(w));
+      tgt.skyHorizon.add(_c.copy(p.skyHorizon).multiplyScalar(w));
+      tgt.cloud.add(_c.copy(p.cloud).multiplyScalar(w));
+      tgt.cloudO += p.cloudO * w;
     }
+    const inv = 1 / total;
+    tgt.fog.multiplyScalar(inv);
+    tgt.fogDensity *= inv;
+    tgt.sun.multiplyScalar(inv);
+    tgt.sunI *= inv;
+    tgt.hemiSky.multiplyScalar(inv);
+    tgt.hemiGround.multiplyScalar(inv);
+    tgt.hemiI *= inv;
+    tgt.skyTop.multiplyScalar(inv);
+    tgt.skyHorizon.multiplyScalar(inv);
+    tgt.cloud.multiplyScalar(inv);
+    tgt.cloudO *= inv;
 
     // smooth approach (the concept's 2.5s transitions)
     const k = 1 - Math.exp(-1.6 * dt);
@@ -189,7 +211,10 @@ export function Weather() {
     cur.cloudO = THREE.MathUtils.lerp(cur.cloudO, tgt.cloudO, k);
 
     st.fog.color.copy(cur.fog);
-    st.fog.density = cur.fogDensity;
+    // the map view looks down from ~600 units, where a zone's full fog (the
+    // forge-smoke of Erebor, say) washes the map out; ease it off up there
+    st.mapFog += ((game().overview ? 0.5 : 1) - st.mapFog) * Math.min(1, 2.5 * dt);
+    st.fog.density = cur.fogDensity * st.mapFog;
     skyUniforms.uTop.value.copy(cur.skyTop);
     skyUniforms.uHorizon.value.copy(cur.skyHorizon);
     skyUniforms.uSunColor.value.copy(cur.sun);

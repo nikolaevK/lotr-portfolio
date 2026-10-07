@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useGame } from "@/state/store";
 import {
   PARCHMENT_BG,
@@ -50,6 +50,33 @@ export function BookCover() {
   const visitedCount = useGame((s) => Object.keys(s.visited).length);
   const mount = useGame((s) => s.mount);
   const setMount = useGame((s) => s.setMount);
+
+  // The book is laid out at its full 580px height and scaled to fit a short
+  // screen. Clamping its height instead (as it was) clipped the title page on
+  // a landscape phone — BEGIN THE JOURNEY fell below the page edge.
+  // A narrow portrait phone wraps the title page taller than that, so the
+  // book also grows to hold it (its words plus 2×40 padding and the border).
+  const content = useRef<HTMLDivElement>(null);
+  const [bookH, setBookH] = useState(580);
+  const [fit, setFit] = useState(1);
+  const [isTouch, setIsTouch] = useState(false);
+  useEffect(() => {
+    const upd = () => {
+      const h = Math.max(580, (content.current?.offsetHeight ?? 0) + 82);
+      setBookH(h);
+      setFit(Math.max(0.3, Math.min(1, (window.innerHeight - 24) / h)));
+    };
+    upd();
+    setIsTouch(matchMedia("(pointer: coarse)").matches);
+    // the words reflow with the width, the web fonts and the touch hints
+    const ro = new ResizeObserver(upd);
+    if (content.current) ro.observe(content.current);
+    window.addEventListener("resize", upd);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", upd);
+    };
+  }, []);
 
   const embers = useMemo(
     () =>
@@ -130,7 +157,16 @@ export function BookCover() {
           }}
         />
       ))}
-      <div style={{ position: "relative", width: "min(440px, 88vw)", height: "min(580px, 80vh)", perspective: 2000 }}>
+      <div
+        style={{
+          position: "relative",
+          width: "min(440px, 88vw)",
+          height: bookH,
+          flex: "none",
+          perspective: 2000,
+          transform: fit < 1 ? `scale(${fit})` : undefined,
+        }}
+      >
         {/* title page beneath the cover, atop the book block */}
         <div
           style={{
@@ -176,7 +212,7 @@ export function BookCover() {
               pointerEvents: "none",
             }}
           />
-          <div style={{ position: "relative" }}>
+          <div ref={content} style={{ position: "relative" }}>
             <div className="cinzel" style={{ fontSize: 13, letterSpacing: ".3em", color: "#8a6420" }}>
               HEREIN ARE RECORDED
             </div>
@@ -197,9 +233,19 @@ export function BookCover() {
               {steedBtn("eagle", "THE GREAT EAGLE", "swift as the wind")}
             </div>
             <div style={{ margin: "18px 0 0", fontSize: 16, color: "#5c4a28", lineHeight: 1.6 }}>
-              <b>W</b> soars ahead, <b>A</b>/<b>D</b> wheel, <b>S</b> eases up · <b>SHIFT</b> swifter
-              <br />
-              <b>F</b> for dragon-fire or the eagle&apos;s cry · <b>M</b> for the map view
+              {isTouch ? (
+                <>
+                  Steer with the stick · <b>SOAR</b> for speed
+                  <br />
+                  <b>FIRE</b> for dragon-fire or the eagle&apos;s cry · <b>MAP</b> for the high view
+                </>
+              ) : (
+                <>
+                  <b>W</b> soars ahead, <b>A</b>/<b>D</b> wheel, <b>S</b> eases up · <b>SHIFT</b> swifter
+                  <br />
+                  <b>F</b> for dragon-fire or the eagle&apos;s cry · <b>M</b> for the map view
+                </>
+              )}
               <br />
               Seek the five marked lands
             </div>

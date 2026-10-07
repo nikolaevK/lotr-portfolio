@@ -1,24 +1,18 @@
-"use client";
-
-import { useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
-import * as THREE from "three";
-import { MAP_W, MAP_H } from "@/data/content";
-import { heightAt } from "@/three/noise";
-import { morph } from "@/three/Terrain";
-
 /**
- * Rivers and roads of Middle-earth, traced as map-fraction polylines against
- * the drawn art of map.jpg and draped as thin ribbons over the live terrain.
+ * Rivers, roads and woods of Middle-earth, traced as map-fraction (u, v)
+ * polylines and ellipses against the drawn art of public/assets/map.jpg.
+ *
+ * Pure data: the terrain baker (terrainData.ts, run in a worker) rasterises
+ * these into the feature texture the ground shader and the forests read.
  */
 
-interface Way {
+export interface Way {
   pts: [number, number][]; // u,v control points, source → mouth
   w: number; // half-width in world units
 }
 
 // ── rivers (source → sea), traced from the map art ───────────────────────────
-const RIVERS: Way[] = [
+export const RIVERS: Way[] = [
   // Anduin, the Great River — from the northern vales past Lórien, Rauros,
   // Osgiliath and Pelargir to the delta at the Bay of Belfalas
   {
@@ -74,7 +68,7 @@ const RIVERS: Way[] = [
 ];
 
 // ── roads ────────────────────────────────────────────────────────────────────
-const ROADS: Way[] = [
+export const ROADS: Way[] = [
   // The Great East Road — Grey Havens through the Shire and Bree to Rivendell
   {
     pts: [
@@ -97,104 +91,47 @@ const ROADS: Way[] = [
   },
 ];
 
-/** Ribbon geometry draped on the terrain along a smoothed polyline. */
-function buildRibbon(way: Way, lift: number): THREE.BufferGeometry {
-  const curve = new THREE.CatmullRomCurve3(
-    way.pts.map(([u, v]) => new THREE.Vector3(u * MAP_W, 0, v * MAP_H)),
-    false,
-    "centripetal",
-  );
-  const n = Math.max(24, way.pts.length * 7);
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const p = new THREE.Vector3();
-  const t = new THREE.Vector3();
-  for (let i = 0; i <= n; i++) {
-    const f = i / n;
-    curve.getPoint(f, p);
-    curve.getTangent(f, t);
-    // taper the ends so sources and mouths fade into the land
-    const taper = Math.min(1, Math.min(f, 1 - f) * 10 + 0.25);
-    const w = way.w * taper;
-    const nx = -t.z;
-    const nz = t.x;
-    const inv = 1 / (Math.hypot(nx, nz) || 1);
-    const y = heightAt(p.x, p.z) + lift;
-    positions.push(p.x + nx * inv * w, y, p.z + nz * inv * w, p.x - nx * inv * w, y, p.z - nz * inv * w);
-    if (i > 0) {
-      const b = (i - 1) * 2;
-      indices.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
-  g.setIndex(indices);
-  g.computeVertexNormals();
-  return g;
+/**
+ * Woods, as soft ellipses in map fractions: centre (u, v), radii (ru, rv),
+ * density 0..1 and the kind of tree that grows there. Placed over the forest
+ * glyphs of map.jpg (Oct 2026 trace).
+ */
+export type TreeKind = "broadleaf" | "conifer" | "mirk" | "mallorn" | "ent";
+
+export interface Wood {
+  u: number;
+  v: number;
+  ru: number;
+  rv: number;
+  density: number;
+  kind: TreeKind;
 }
 
-function mergeWays(ways: Way[], lift: number): THREE.BufferGeometry {
-  const positions: number[] = [];
-  const indices: number[] = [];
-  for (const w of ways) {
-    const g = buildRibbon(w, lift);
-    const base = positions.length / 3;
-    const pos = g.getAttribute("position") as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
-    const idx = g.getIndex()!;
-    for (let i = 0; i < idx.count; i++) indices.push(base + idx.getX(i));
-    g.dispose();
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
-  g.setIndex(indices);
-  g.computeVertexNormals();
-  return g;
-}
-
-export function Waterways() {
-  const group = useRef<THREE.Group>(null);
-
-  const riverGeo = useMemo(() => mergeWays(RIVERS, 2.0), []);
-  const roadGeo = useMemo(() => mergeWays(ROADS, 1.6), []);
-
-  const riverMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: "#3d7086",
-        roughness: 0.22,
-        metalness: 0.45,
-        transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
-      }),
-    [],
-  );
-  const roadMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: "#8d7448",
-        roughness: 0.96,
-        transparent: true,
-        opacity: 0.74,
-        depthWrite: false,
-      }),
-    [],
-  );
-
-  useFrame(({ clock }) => {
-    if (group.current) {
-      group.current.scale.y = Math.max(morph.value, 0.001);
-      group.current.visible = morph.value > 0.05;
-    }
-    // faint living shimmer on the water
-    riverMat.opacity = 0.88 + Math.sin(clock.elapsedTime * 0.9) * 0.05;
-  });
-
-  return (
-    <group ref={group}>
-      <mesh geometry={roadGeo} material={roadMat} renderOrder={2} />
-      <mesh geometry={riverGeo} material={riverMat} renderOrder={3} />
-    </group>
-  );
-}
+export const WOODS: Wood[] = [
+  // Mirkwood — the great dark forest, laid out as overlapping lobes
+  { u: 0.612, v: 0.185, ru: 0.047, rv: 0.032, density: 1, kind: "mirk" },
+  { u: 0.627, v: 0.255, ru: 0.060, rv: 0.058, density: 1, kind: "mirk" },
+  { u: 0.632, v: 0.325, ru: 0.046, rv: 0.045, density: 1, kind: "mirk" },
+  { u: 0.625, v: 0.383, ru: 0.030, rv: 0.026, density: 0.95, kind: "mirk" },
+  // Fangorn, eaves of the Misty Mountains' southern tip
+  { u: 0.522, v: 0.447, ru: 0.026, rv: 0.027, density: 1, kind: "ent" },
+  // Lothlórien, the Golden Wood between Celebrant and Anduin
+  { u: 0.548, v: 0.378, ru: 0.017, rv: 0.013, density: 1, kind: "mallorn" },
+  // Eriador
+  { u: 0.401, v: 0.272, ru: 0.017, rv: 0.024, density: 0.95, kind: "broadleaf" }, // the Old Forest
+  { u: 0.428, v: 0.221, ru: 0.014, rv: 0.014, density: 0.85, kind: "broadleaf" }, // Chetwood
+  { u: 0.344, v: 0.224, ru: 0.010, rv: 0.010, density: 0.55, kind: "broadleaf" }, // woods of the Northfarthing
+  { u: 0.371, v: 0.283, ru: 0.012, rv: 0.007, density: 0.55, kind: "broadleaf" }, // Green Hill Country
+  { u: 0.478, v: 0.290, ru: 0.013, rv: 0.020, density: 0.85, kind: "conifer" }, // the Trollshaws
+  { u: 0.487, v: 0.222, ru: 0.012, rv: 0.010, density: 0.7, kind: "conifer" },
+  { u: 0.310, v: 0.386, ru: 0.020, rv: 0.012, density: 0.8, kind: "broadleaf" }, // Harlindon groves
+  { u: 0.355, v: 0.391, ru: 0.012, rv: 0.010, density: 0.75, kind: "broadleaf" },
+  { u: 0.326, v: 0.440, ru: 0.011, rv: 0.009, density: 0.85, kind: "conifer" }, // Eryn Vorn
+  // Gondor
+  { u: 0.588, v: 0.525, ru: 0.012, rv: 0.010, density: 0.85, kind: "conifer" }, // Drúadan Forest
+  { u: 0.632, v: 0.600, ru: 0.010, rv: 0.040, density: 0.6, kind: "broadleaf" }, // Ithilien
+  { u: 0.566, v: 0.671, ru: 0.012, rv: 0.010, density: 0.7, kind: "broadleaf" }, // Lebennin
+  // the East
+  { u: 0.832, v: 0.350, ru: 0.028, rv: 0.030, density: 0.9, kind: "conifer" }, // woods north of Rhûn
+  { u: 0.930, v: 0.495, ru: 0.025, rv: 0.050, density: 0.9, kind: "conifer" },
+];

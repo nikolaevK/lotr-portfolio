@@ -18,9 +18,11 @@ npm run build      # production build
 npm start          # serve the production build
 ```
 
-No external 3D assets, no model files — the dragon, terrain relief,
-landmarks, weather and audio are all procedural. The only texture is the
-parchment map (`public/assets/map.jpg`) from the original concept.
+No external 3D assets — the steeds, characters, terrain relief, landmarks,
+weather and audio are all procedural. The only texture is the parchment map
+(`public/assets/map.jpg`) from the original concept. (The GLBs in
+`public/models` are only a fallback: a character whose model URL names no
+procedural figure is loaded from there.)
 
 ## Controls
 
@@ -31,9 +33,8 @@ parchment map (`public/assets/map.jpg`) from the original concept.
 | `S` / `↓` | Ease up (airbrake — the eagle fans its tail wide) |
 | `W A S D` in map view | Glide over the map in screen directions |
 | `SHIFT` | Soar swifter (boost, wider FOV, glide) |
-| `F` | Dragon-fire, or the Great Eagle's beacon-kindling cry |
-| `F` / `Space` | Dragon-fire (lights the Beacons of Gondor) |
-| `M` | The eagle's view (tactical overview) |
+| `F` / `Space` | Dragon-fire, or the Great Eagle's beacon-kindling cry (lights the Beacons of Gondor) |
+| `M` | Map view (the high aerial overview) |
 | Click a marker / quest / minimap | Autopilot to that place |
 | `Esc` | Close scroll / drawer / raven |
 | Touch devices | Virtual joystick + FIRE / SOAR buttons |
@@ -45,8 +46,8 @@ parchment map (`public/assets/map.jpg`) from the original concept.
 parchment scrolls, quest log with artifacts and six earned titles, Common
 Tongue ↔ Elvish tone toggle, five LOTR cursors, per-region weather with
 captions and Mordor lightning, procedural WebAudio soundscape (pad, wind,
-zone filters, chimes, thunder), “Send a Raven” contact (mailto) with the
-flying raven, toasts, Esc handling, autopilot travel.
+zone filters, chimes, thunder), “Send a Raven” contact form (posted to
+`/api/contact`) with the flying raven, toasts, Esc handling, autopilot travel.
 
 **Expanded for 3D:**
 
@@ -58,14 +59,33 @@ flying raven, toasts, Esc handling, autopilot travel.
   wheels tighter and cruises faster; its battle-cry (F) kindles the beacons.
 - **The dragon** — procedurally built and skinned: 17-bone undulating spine,
   hierarchical wing beats with tip lag and membrane billow, banking into
-  turns, head stabilization, glide at speed, terrain-following flight with
-  look-ahead climbs, fire breath with light-casting particles, real shadows.
+  turns, head stabilization, glide at speed, fire breath with light-casting
+  particles, real shadows.
+- **Flight physics** — shared by both steeds: they roll into a turn before
+  the nose swings round (coordinated turns), carry momentum wide through hard
+  turns, trade speed for height on a climb and win it back in a dive, and
+  hold their altitude on a critically damped spring over a look-ahead
+  envelope of land, forest canopy and landmarks — they climb over Orthanc
+  rather than through it, and the camera never ends up inside a tower.
 - **The world** — the parchment morphs into a heightfield authored after the
   actual map (Misty Mountains, White Mountains, Mordor's rim, Erebor, Mount
-  Doom, the Rivendell valley), with sea sheets, drifting cloud shadows,
-  billboard clouds and procedural landmarks: Hobbiton, Rivendell + Lórien,
-  Erebor's gate, seven-tiered Minas Tirith, Barad-dûr with a sweeping Eye,
-  and an erupting Mount Doom.
+  Doom, the Rivendell valley), and the map *comes alive* as the camera
+  descends to it: grass by climate and region (the Shire's green, Rohan's
+  gold, Mordor's ash), craggy rock and latitude-aware snow lines, beaches,
+  rivers and roads cut into the ground, lava channels down Orodruin, and
+  thousands of instanced trees in Mirkwood, Fangorn, Lórien and the woods
+  traced from the map — turning back into parchment from the map view. A
+  reflective sea with shore surf, drifting cloud shadows and procedural
+  landmarks seated on levelled ground: Hobbiton, Rivendell + Lórien,
+  Erebor's gate cut into the mountain, seven-tiered Minas Tirith against
+  Mindolluin, Barad-dûr with a sweeping Eye, and an erupting Mount Doom.
+- **Performance** — the terrain is baked once in a Web Worker on a 2-unit
+  grid while the cover is open, then drawn as GPU-displaced chunks in four
+  distance-based LOD rings (one instanced draw per ring, per-pixel normals);
+  forests stream around the camera; the steeds' rigid parts are merged or
+  instanced (the dragon went from ~130 draw calls to ~30); and the render
+  resolution adapts to hold the frame rate on retina screens and
+  integrated GPUs.
 - **Weather patterns** — full atmosphere blending per region (fog, sun,
   hemisphere light, sky dome, cloud tint), god-ray shafts over the blessed
   lands, GPU particle systems (embers, elf-light, leaves, ash, silver
@@ -105,6 +125,13 @@ src/input/controls.ts   keyboard/touch → one input record
 src/audio/engine.ts     procedural WebAudio engine
 src/three/              terrain, sky, clouds, dragon, weather, particles,
                         god rays, landmarks, markers, beacons, pages, fire
+  noise.ts              heightAt() — the single source of terrain truth
+                        (relief, crags, landmark pads)
+  terrainBake.ts        the baked grid: heights, normals, biome, rivers,
+                        roads, forests (run in terrain.worker.ts)
+  ways.ts               rivers, roads and woods traced from the map art
+  Forests.tsx           instanced, camera-streamed trees
+  flight.ts             shared steed physics; obstacles.ts = solid envelope
 src/ui/                 book cover, HUD, scroll panel, quest log, contact,
                         toasts, raven, minimap, touch controls
 ```
