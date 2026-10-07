@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useGame } from "@/state/store";
 import {
   useContent,
@@ -12,11 +12,13 @@ import {
 import { PARCHMENT_BG, parchmentOverlay, EDGE_BURN } from "@/ui/parchment";
 import { CharacterNiche } from "@/ui/ScrollCharacter";
 import { useDialog } from "@/ui/a11y";
+import { leadIn } from "@/ui/redbook/book";
 
-const ACCENT = "#8a6420";
+// small gold capitals and italic meta hold 4.5:1 against the paper
+const ACCENT = "#76561c";
 const INK = "#241a0c";
 const INK_SOFT = "#3a2c14";
-const FADED = "#6d5a33";
+const FADED = "#5e4b28";
 const BODY_FONT = "var(--font-garamond), serif";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -31,25 +33,35 @@ function fmtMonth(iso: string | null | undefined): string {
 function Chips({ tech }: { tech: string | null }) {
   if (!tech) return null;
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
       {tech.split("·").map((t) => t.trim()).filter(Boolean).map((t) => (
         <span
           key={t}
-          className="cinzel"
           style={{
-            fontSize: 10.5,
-            letterSpacing: ".07em",
+            fontSize: 14.5,
+            lineHeight: 1.3,
             color: INK_SOFT,
             background: "rgba(201,150,60,.13)",
-            border: "1px solid rgba(138,100,32,.45)",
+            border: "1px solid rgba(138,100,32,.4)",
             borderRadius: 2,
-            padding: "3px 8px",
+            padding: "2px 9px",
           }}
         >
           {t}
         </span>
       ))}
     </div>
+  );
+}
+
+/** One deed; a short "Label:" lead-in is set in bold so the list scans. */
+function Deed({ text }: { text: string }) {
+  const [label, rest] = leadIn(text);
+  return (
+    <li style={{ textWrap: "pretty" }}>
+      {label && <b style={{ fontWeight: 600, color: "#2c1f0d" }}>{label}: </b>}
+      {rest}
+    </li>
   );
 }
 
@@ -62,7 +74,7 @@ function Bullets({ items, fold = 4 }: { items: string[]; fold?: number }) {
     <>
       <ul style={{ margin: "10px 0 0", paddingLeft: 20, display: "flex", flexDirection: "column", gap: 7, fontSize: 16.5, lineHeight: 1.5 }}>
         {shown.map((d, i) => (
-          <li key={i} style={{ textWrap: "pretty" }}>{d}</li>
+          <Deed key={i} text={d} />
         ))}
       </ul>
       {items.length > fold && (
@@ -76,7 +88,7 @@ function Bullets({ items, fold = 4 }: { items: string[]; fold?: number }) {
             border: "none",
             borderBottom: `1px dashed ${ACCENT}`,
             color: ACCENT,
-            fontSize: 11,
+            fontSize: 12,
             letterSpacing: ".14em",
             padding: "8px 0",
             cursor: "pointer",
@@ -115,7 +127,7 @@ function SectionRule({ label }: { label: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "22px 0 12px" }}>
       <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, transparent, ${ACCENT})` }} />
-      <div className="cinzel" style={{ color: ACCENT, fontSize: 11.5, letterSpacing: ".22em", whiteSpace: "nowrap" }}>{label}</div>
+      <div className="cinzel" style={{ color: ACCENT, fontSize: 12.5, letterSpacing: ".2em", whiteSpace: "nowrap" }}>{label}</div>
       <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${ACCENT}, transparent)` }} />
     </div>
   );
@@ -125,7 +137,7 @@ function DateBadge({ children }: { children: React.ReactNode }) {
   return (
     <span
       className="cinzel"
-      style={{ fontSize: 11, letterSpacing: ".1em", color: ACCENT, border: `1px solid rgba(138,100,32,.5)`, borderRadius: 2, padding: "2px 8px", whiteSpace: "nowrap" }}
+      style={{ fontSize: 12.5, letterSpacing: ".08em", color: ACCENT, border: `1px solid rgba(138,100,32,.5)`, borderRadius: 2, padding: "2px 8px", whiteSpace: "nowrap" }}
     >
       {children}
     </span>
@@ -135,7 +147,7 @@ function DateBadge({ children }: { children: React.ReactNode }) {
 function ExperienceEntry({ e }: { e: ExperienceRecord }) {
   const meta = [e.company, e.location, e.employmentType].filter(Boolean).join(" · ");
   return (
-    <article style={{ marginBottom: 6 }}>
+    <article className="rec-entry">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h3 className="cinzel" style={{ fontSize: 19, fontWeight: 700, margin: 0, color: "#2c1f0d" }}>{e.title}</h3>
         <DateBadge>{fmtMonth(e.start)} — {fmtMonth(e.end)}</DateBadge>
@@ -150,7 +162,7 @@ function ExperienceEntry({ e }: { e: ExperienceRecord }) {
 
 function EducationEntry({ e }: { e: EducationRecord }) {
   return (
-    <article style={{ marginBottom: 6 }}>
+    <article className="rec-entry">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h3 className="cinzel" style={{ fontSize: 19, fontWeight: 700, margin: 0, color: "#2c1f0d" }}>{e.institution}</h3>
         {(e.startYear || e.endYear) && <DateBadge>{e.startYear} — {e.endYear ?? "Present"}</DateBadge>}
@@ -174,12 +186,12 @@ function EducationEntry({ e }: { e: EducationRecord }) {
 function ProjectEntry({ p }: { p: ProjectRecord }) {
   const year = p.yearStart ? `${p.yearStart} — ${p.yearEnd ?? "ongoing"}` : null;
   return (
-    <article style={{ marginBottom: 6 }}>
+    <article className="rec-entry">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h3 className="cinzel" style={{ fontSize: 17.5, fontWeight: 700, margin: 0, color: "#2c1f0d" }}>
           {p.name}
           {p.kind && (
-            <span className="cinzel" style={{ fontSize: 10, letterSpacing: ".14em", color: ACCENT, marginLeft: 10, verticalAlign: "middle" }}>
+            <span className="cinzel" style={{ fontSize: 11, letterSpacing: ".14em", color: ACCENT, marginLeft: 10, verticalAlign: "middle" }}>
               {p.kind.toUpperCase()}
             </span>
           )}
@@ -300,7 +312,7 @@ function ScrollBody({ region, isNew, titleId }: { region: RegionContent; isNew: 
       {/* body: character niche floats beside the words */}
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
         {region.characters.length > 0 && (
-          <aside className="scroll-char-rail" style={{ flex: "0 0 216px", display: "flex", flexDirection: "column", gap: 16, paddingTop: 4 }}>
+          <aside className="scroll-char-rail" style={{ flex: "0 0 216px", display: "flex", flexDirection: "column", gap: 16, paddingTop: 4, position: "sticky", top: 8 }}>
             {region.characters.map((c) => (
               <CharacterNiche key={c.slug} c={c} glyph={region.glyph} ring={region.ring} />
             ))}
@@ -317,7 +329,7 @@ function ScrollBody({ region, isNew, titleId }: { region: RegionContent; isNew: 
             <>
               <ul style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 9, fontSize: 17, lineHeight: 1.55 }}>
                 {region.deeds.map((d, i) => (
-                  <li key={i} style={{ textWrap: "pretty" }}>{d}</li>
+                  <Deed key={i} text={d} />
                 ))}
               </ul>
               <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 16, padding: "13px 16px", background: "rgba(0,0,0,.10)", border: `3px double ${ACCENT}`, borderRadius: 2 }}>
@@ -372,7 +384,7 @@ function ScrollBody({ region, isNew, titleId }: { region: RegionContent; isNew: 
             </>
           )}
 
-          <div className="cinzel" style={{ marginTop: 18, textAlign: "center", fontSize: 10.5, letterSpacing: ".22em", color: ACCENT, opacity: 0.8 }}>
+          <div className="cinzel" style={{ marginTop: 22, textAlign: "center", fontSize: 11, letterSpacing: ".22em", color: ACCENT }}>
             — FROM THE RED BOOK OF WESTMARCH —
           </div>
         </div>
@@ -391,7 +403,23 @@ export function ScrollPanel() {
   const sheet = useRef<HTMLDivElement>(null);
   const panel = useDialog<HTMLDivElement>(!!region, { modal: true, initial: sheet });
   const titleId = useId();
+  // the catchword: more of the scroll waits below the fold
+  const [more, setMore] = useState(false);
+  const measure = useCallback(() => {
+    const el = sheet.current;
+    if (el) setMore(el.scrollHeight - el.scrollTop - el.clientHeight > 16);
+  }, []);
+  useEffect(() => {
+    const el = sheet.current;
+    if (!el) return;
+    // fonts, the unfolding deeds and the record tab all change the height
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [measure, region?.id]);
   if (!region) return null;
+  const fade = more ? "linear-gradient(#000 calc(100% - 48px), transparent)" : undefined;
 
   // turned wooden rod: grain streaks over a lathe-shaded cylinder
   const rollerBg =
@@ -511,10 +539,36 @@ export function ScrollPanel() {
             <div
               ref={sheet}
               tabIndex={-1}
+              onScroll={measure}
               className="scroll-sheet on-parchment"
-              style={{ position: "relative", maxHeight: "calc(76vh - 58px)", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "32px 46px 28px" }}
+              style={{
+                position: "relative",
+                maxHeight: "calc(76vh - 58px)",
+                overflowY: "auto",
+                WebkitOverflowScrolling: "touch",
+                padding: "32px 46px 28px",
+                maskImage: fade,
+                WebkitMaskImage: fade,
+              }}
             >
               <ScrollBody key={region.id} region={region} isNew={isNew} titleId={titleId} />
+            </div>
+            <div
+              aria-hidden
+              className="fell"
+              style={{
+                position: "absolute",
+                right: 28,
+                bottom: 6,
+                fontSize: 15,
+                fontStyle: "italic",
+                color: "#5e4b28",
+                opacity: more ? 1 : 0,
+                transition: "opacity .25s",
+                pointerEvents: "none",
+              }}
+            >
+              read on ▾
             </div>
           </div>
         </div>

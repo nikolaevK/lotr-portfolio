@@ -72,6 +72,16 @@ export function fmtMonth(iso: string | null | undefined): string {
 export const techList = (s: string | null): string[] =>
   s ? s.split("·").map((t) => t.trim()).filter(Boolean) : [];
 
+/**
+ * "Deal pipeline: one form creates…" → ["Deal pipeline", "one form creates…"],
+ * so a deed's lead-in can be set in bold. Only a short phrase counts: a
+ * sentence that happens to contain a colon stays whole.
+ */
+export function leadIn(s: string): [string | null, string] {
+  const m = /^([^:.!?]{2,48}):\s+([\s\S]+)$/.exec(s);
+  return m ? [m[1], m[2]] : [null, s];
+}
+
 /** Link text without the scheme: what a reader would type, or print. */
 export const bareUrl = (url: string) => url.replace(/^(https?:\/\/|mailto:)/, "").replace(/\/$/, "");
 
@@ -82,7 +92,7 @@ export const hasRecord = (r: RegionContent) =>
 export function withFallbacks(p: ProfileInfo | null): ProfileInfo {
   return {
     name: p?.name || "Konstantin Nikolaev",
-    headline: p?.headline || "Full-Stack Software Engineer",
+    headline: p?.headline || "Frontend & Full-Stack Software Engineer",
     location: p ? p.location : "Sherman Oaks, CA",
     phone: null, // never shown: the book is public, the number lives on the résumé
     email: p?.email || "konstantin@nikolaev.us",

@@ -57,7 +57,7 @@ export function QuestLog() {
         <div>
           <div id={titleId} className="cinzel" style={{ fontSize: 18, letterSpacing: ".12em", color: "#e2c682" }}>QUEST LOG</div>
           {TITLES.length > 0 && (
-            <div style={{ fontSize: 14, fontStyle: "italic", color: "#9c8a5e", marginTop: 2 }}>{TITLES[Math.min(count, TITLES.length - 1)]}</div>
+            <div style={{ fontSize: 14, fontStyle: "italic", color: "#b8a678", marginTop: 2 }}>{TITLES[Math.min(count, TITLES.length - 1)]}</div>
           )}
         </div>
         <button onClick={s.toggleQuest} aria-label="Close the quest log" style={{ background: "none", border: "1px solid #6b5327", color: "#c7b485", width: 30, height: 30, cursor: "pointer", fontSize: 15, borderRadius: 2 }}>
@@ -93,8 +93,8 @@ export function QuestLog() {
                 >
                   {/* spans, not divs: a button holds phrasing content only */}
                   <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <span className="cinzel" style={{ fontSize: 14, letterSpacing: ".05em", color: visited ? "#e2c682" : "#8a794f" }}>{r.place}</span>
-                    <span className="cinzel" style={{ fontSize: 12, color: visited ? "#7fa860" : "#6b5a38", letterSpacing: ".08em" }}>
+                    <span className="cinzel" style={{ fontSize: 14, letterSpacing: ".05em", color: visited ? "#e2c682" : "#b3a174" }}>{r.place}</span>
+                    <span className="cinzel" style={{ fontSize: 12, color: visited ? "#8fb870" : "#8f7d55", letterSpacing: ".08em" }}>
                       {visited ? "CHARTED" : "UNKNOWN"}
                     </span>
                   </span>
@@ -135,7 +135,7 @@ export function QuestLog() {
           <div className="cinzel" style={{ fontSize: 13, letterSpacing: ".08em", color: pagesN === LOST_PAGES.length ? "#7fa860" : "#c7b485" }}>
             THE LOST PAGES · {pagesN}/{LOST_PAGES.length}
           </div>
-          <div style={{ fontSize: 13, fontStyle: "italic", color: "#8a794f", marginTop: 4 }}>
+          <div style={{ fontSize: 14, fontStyle: "italic", color: "#ad9b70", marginTop: 4 }}>
             Pages of the Red Book drift on the winds — fly through them to recover the tale.
           </div>
         </div>
@@ -143,12 +143,12 @@ export function QuestLog() {
           <div className="cinzel" style={{ fontSize: 13, letterSpacing: ".08em", color: beaconsN === BEACONS.length ? "#7fa860" : "#c7b485" }}>
             LIGHT THE BEACONS · {beaconsN}/{BEACONS.length}
           </div>
-          <div style={{ fontSize: 13, fontStyle: "italic", color: "#8a794f", marginTop: 4 }}>
+          <div style={{ fontSize: 14, fontStyle: "italic", color: "#ad9b70", marginTop: 4 }}>
             Three pyres stand on the White Mountains west of Minas Tirith. Swoop close and strike with dragon-fire or the eagle&apos;s cry (<b>F</b>).
           </div>
         </div>
       </div>
-      <div style={{ padding: "14px 22px", borderTop: "1px solid #4a3a18", fontSize: 13, color: "#8a794f", fontStyle: "italic" }}>
+      <div style={{ padding: "14px 22px", borderTop: "1px solid #4a3a18", fontSize: 14, color: "#ad9b70", fontStyle: "italic" }}>
         Chart all five lands to earn your final title.
         <button
           onClick={() => {
@@ -158,7 +158,7 @@ export function QuestLog() {
             }
           }}
           className="cinzel"
-          style={{ display: "block", marginTop: 8, background: "none", border: "1px solid #4a3a18", color: "#8a794f", fontSize: 11, letterSpacing: ".12em", padding: "6px 10px", cursor: "pointer", borderRadius: 2 }}
+          style={{ display: "block", marginTop: 8, background: "none", border: "1px solid #4a3a18", color: "#ad9b70", fontSize: 11.5, letterSpacing: ".12em", padding: "6px 10px", cursor: "pointer", borderRadius: 2 }}
         >
           ↻ BEGIN A NEW JOURNEY
         </button>

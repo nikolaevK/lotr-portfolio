@@ -17,7 +17,7 @@ async function buildContent() {
     regions, tones, deeds, artifacts, links, characters,
     experiences, expHighlights, educations, eduDegrees, eduCourses,
     projects, projHighlights, titles, lostPages, beacons, xp,
-    profile, profileLinks, resumeVariants,
+    profile, profileLinks, resumeVariants, skillCats, skills,
   ] = await db().batch(
     [
       "SELECT * FROM regions ORDER BY sort_order",
@@ -42,6 +42,8 @@ async function buildContent() {
       // no `data` — the blob would bloat the whole content payload; `ver` busts
       // CDN caches when a reused SQLite rowid gets a different PDF
       "SELECT id, label, file_path, is_default, (data IS NOT NULL) AS has_blob, COALESCE(strftime('%s', uploaded_at), 0) AS ver FROM resume_variants ORDER BY sort_order",
+      "SELECT id, name FROM skill_categories ORDER BY sort_order",
+      "SELECT category_id, name FROM skills ORDER BY category_id, sort_order",
     ],
     "read",
   );
@@ -182,6 +184,13 @@ async function buildContent() {
           links: profileLinks.rows.map((l) => ({ label: String(l.label), url: String(l.url) })),
         }
       : null,
+    // empty categories are left out: nothing to show under their heading
+    skills: skillCats.rows
+      .map((c) => ({
+        category: String(c.name),
+        items: skills.rows.filter((k) => Number(k.category_id) === Number(c.id)).map((k) => String(k.name)),
+      }))
+      .filter((c) => c.items.length > 0),
     resumeVariants: resumeVariants.rows.map((v) => ({
       label: String(v.label),
       path: Number(v.has_blob) ? `/api/resume/${Number(v.id)}?v=${Number(v.ver)}` : String(v.file_path),

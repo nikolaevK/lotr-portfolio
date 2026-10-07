@@ -307,7 +307,7 @@ export function QuestGuide() {
             style={{ ...paper, display: "block", width: "100%", padding: "10px 14px 9px", boxShadow: CARD_SHADOW }}
           >
             <span style={parchmentOverlay} />
-            <span className="cinzel" style={{ position: "relative", display: "flex", alignItems: "center", gap: 7, fontSize: 9.5, letterSpacing: ".18em", color: "#8c2e1e", paddingRight: 14 }}>
+            <span className="cinzel" style={{ position: "relative", display: "flex", alignItems: "center", gap: 7, fontSize: 11, letterSpacing: ".16em", color: "#8c2e1e", paddingRight: 14 }}>
               <Diamond kind={obj.kind} size={7} />
               {obj.kicker}
             </span>
@@ -315,23 +315,23 @@ export function QuestGuide() {
               {obj.title}
             </span>
             {sub && (
-              <span style={{ position: "relative", display: "block", marginTop: 3, fontSize: 13.5, lineHeight: 1.25, fontStyle: "italic", color: "#6b4f22" }}>
+              <span style={{ position: "relative", display: "block", marginTop: 3, fontSize: 14, lineHeight: 1.25, fontStyle: "italic", color: "#5e4520" }}>
                 {sub}
               </span>
             )}
             <span style={{ position: "relative", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginTop: 7, paddingTop: 6, borderTop: "1px solid rgba(107,83,39,.35)" }}>
               <span ref={distRef} style={{ fontSize: 13.5, fontStyle: "italic", color: "#4a3418", whiteSpace: "nowrap" }} />
-              <span ref={rideRef} className="cinzel" style={{ fontSize: 9.5, letterSpacing: ".16em", color: "#8c2e1e", whiteSpace: "nowrap" }} />
+              <span ref={rideRef} className="cinzel" style={{ fontSize: 11, letterSpacing: ".14em", color: "#8c2e1e", whiteSpace: "nowrap" }} />
             </span>
           </button>
         ) : (
           <div style={{ ...paper, cursor: "default", padding: "10px 14px 12px", boxShadow: CARD_SHADOW }}>
             <span style={parchmentOverlay} />
-            <div className="cinzel" style={{ position: "relative", fontSize: 9.5, letterSpacing: ".18em", color: "#8c2e1e" }}>THE TALE IS TOLD</div>
+            <div className="cinzel" style={{ position: "relative", fontSize: 11, letterSpacing: ".16em", color: "#8c2e1e" }}>THE TALE IS TOLD</div>
             <div className="fell" style={{ position: "relative", marginTop: 5, fontSize: 18, lineHeight: 1.2, color: "#2b1a0a" }}>
               There and back again
             </div>
-            <div style={{ position: "relative", marginTop: 4, fontSize: 13.5, lineHeight: 1.25, fontStyle: "italic", color: "#6b4f22" }}>
+            <div style={{ position: "relative", marginTop: 4, fontSize: 14, lineHeight: 1.25, fontStyle: "italic", color: "#5e4520" }}>
               Every chapter charted, every page found, every beacon lit.
             </div>
           </div>

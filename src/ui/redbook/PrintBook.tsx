@@ -2,7 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useContent, type RegionContent } from "@/state/content";
-import { bareUrl, fmtMonth, hasRecord, roman, techList, withFallbacks } from "@/ui/redbook/book";
+import { bareUrl, fmtMonth, hasRecord, leadIn, roman, techList, withFallbacks } from "@/ui/redbook/book";
 
 /**
  * Paper takes only this. A child of <body>, so the print rule can drop every
@@ -39,9 +39,16 @@ const PRINT_CSS = `
   .rb-print ul { margin: 2pt 0 0; padding-left: 13pt; }
   .rb-print li { margin: 1.5pt 0; break-inside: avoid; }
   .rb-print .rb-p-tech { font-size: 9.5pt; color: #3a2c14; margin-top: 2pt; }
+  .rb-print .rb-p-skill { margin: 1.5pt 0; break-inside: avoid; }
   .rb-print > footer { break-before: avoid; margin-top: 16pt; padding-top: 5pt; border-top: .6pt solid #c9a35a; text-align: center; font-size: 9pt; font-style: italic; color: #6d5a33; }
 }
 `;
+
+/** A deed, its short "Label:" lead-in in bold. */
+function Deed({ text }: { text: string }) {
+  const [lead, rest] = leadIn(text);
+  return <li>{lead && <b>{lead}: </b>}{rest}</li>;
+}
 
 function Tech({ s }: { s: string | null }) {
   const items = techList(s);
@@ -62,7 +69,7 @@ function PrintChapter({ region, n }: { region: RegionContent; n: number }) {
       {/* the tale's deeds only where no record stands behind them */}
       {!hasRecord(region) && (
         <ul>
-          {region.deeds.map((d, i) => <li key={i}>{d}</li>)}
+          {region.deeds.map((d, i) => <Deed key={i} text={d} />)}
         </ul>
       )}
       {rec.experiences.length > 0 && <h3>Employments</h3>}
@@ -78,7 +85,7 @@ function PrintChapter({ region, n }: { region: RegionContent; n: number }) {
           {e.summary && <p>{e.summary}</p>}
           {e.highlights.length > 0 && (
             <ul>
-              {e.highlights.map((h, i) => <li key={i}>{h}</li>)}
+              {e.highlights.map((h, i) => <Deed key={i} text={h} />)}
             </ul>
           )}
           <Tech s={e.tech} />
@@ -119,7 +126,7 @@ function PrintChapter({ region, n }: { region: RegionContent; n: number }) {
           {p.description && <p>{p.description}</p>}
           {p.highlights.length > 0 && (
             <ul>
-              {p.highlights.map((h, i) => <li key={i}>{h}</li>)}
+              {p.highlights.map((h, i) => <Deed key={i} text={h} />)}
             </ul>
           )}
           <Tech s={p.tech} />
@@ -132,6 +139,7 @@ function PrintChapter({ region, n }: { region: RegionContent; n: number }) {
 /** The whole book as one clean, single-column document — mounted only to print. */
 export function PrintBook() {
   const regions = useContent((c) => c.regions);
+  const skills = useContent((c) => c.skills);
   const p = withFallbacks(useContent((c) => c.profile));
   const contact = [p.location, p.email, ...p.links.map((l) => bareUrl(l.url))].filter(Boolean);
   return createPortal(
@@ -150,6 +158,17 @@ export function PrintBook() {
             <h2>Concerning the Author</h2>
           </header>
           <p>{p.summary}</p>
+        </section>
+      )}
+      {skills.length > 0 && (
+        <section>
+          <header>
+            <div className="rb-p-kicker">Skills</div>
+            <h2>The Craft</h2>
+          </header>
+          {skills.map((g) => (
+            <p key={g.category} className="rb-p-skill"><b>{g.category}:</b> {g.items.join(" · ")}</p>
+          ))}
         </section>
       )}
       {regions.map((r, i) => <PrintChapter key={r.id} region={r} n={i + 1} />)}

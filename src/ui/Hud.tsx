@@ -383,13 +383,13 @@ export function Hud() {
             // phones: one opaque panel, or the guide's ribbon shows through the chips
             <div style={compact ? { display: "flex", flexDirection: "column", gap: 8, background: "rgba(14,9,4,.95)", border: "1px solid #4a3a18", padding: 8, borderRadius: 2 } : { display: "contents" }}>
           {c.titles.length > 0 && (
-            <div style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "5px 12px", fontSize: 14, fontStyle: "italic", color: "#b8a678", borderRadius: 2 }}>
+            <div style={{ background: "rgba(24,16,7,.85)", border: "1px solid #4a3a18", padding: "5px 12px", fontSize: 15, fontStyle: "italic", color: "#d4c08e", borderRadius: 2 }}>
               {c.titles[Math.min(count, c.titles.length - 1)]}
             </div>
           )}
           {/* XP bar */}
-          <div style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "6px 12px 8px", borderRadius: 2 }}>
-            <div className="cinzel" style={{ fontSize: 10, letterSpacing: ".18em", color: "#9c8a5e", marginBottom: 4 }}>
+          <div style={{ background: "rgba(24,16,7,.85)", border: "1px solid #4a3a18", padding: "6px 12px 8px", borderRadius: 2 }}>
+            <div className="cinzel" style={{ fontSize: 11.5, letterSpacing: ".16em", color: "#cdb886", marginBottom: 4 }}>
               XP {xp} / {XP_MAX}
             </div>
             <div style={{ height: 5, background: "#241708", borderRadius: 3, overflow: "hidden", border: "1px solid #3a2d14" }}>
@@ -404,10 +404,10 @@ export function Hud() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <div className="cinzel" style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "4px 10px", fontSize: 11, letterSpacing: ".12em", color: "#c7b485", borderRadius: 2 }}>
+            <div className="cinzel" style={{ background: "rgba(24,16,7,.85)", border: "1px solid #4a3a18", padding: "4px 10px", fontSize: 12, letterSpacing: ".1em", color: "#d4c08e", borderRadius: 2 }}>
               LOST PAGES {pagesN}/{c.lostPages.length}
             </div>
-            <div className="cinzel" style={{ background: "rgba(24,16,7,.7)", border: "1px solid #4a3a18", padding: "4px 10px", fontSize: 11, letterSpacing: ".12em", color: beaconsN > 0 ? "#e8b95c" : "#c7b485", borderRadius: 2 }}>
+            <div className="cinzel" style={{ background: "rgba(24,16,7,.85)", border: "1px solid #4a3a18", padding: "4px 10px", fontSize: 12, letterSpacing: ".1em", color: beaconsN > 0 ? "#e8b95c" : "#d4c08e", borderRadius: 2 }}>
               BEACONS {beaconsN}/{c.beacons.length}
             </div>
           </div>

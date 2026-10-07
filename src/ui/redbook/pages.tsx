@@ -15,13 +15,14 @@ import {
 import { travelTo } from "@/game/actions";
 import { leaveForFlight } from "@/ui/a11y";
 import {
-  bareUrl, fmtMonth, leafLabel, roman, techList, withFallbacks, type Leaf,
+  bareUrl, fmtMonth, hasRecord, leadIn, leafLabel, roman, techList, withFallbacks, type Leaf,
 } from "@/ui/redbook/book";
 
-const ACCENT = "#8a6420";
+// small gold capitals and italic meta hold 4.5:1 against the paper
+const ACCENT = "#76561c";
 const HEAD = "#2c1f0d";
 const INK_SOFT = "#3a2c14";
-const FADED = "#6d5a33";
+const FADED = "#5e4b28";
 
 const pageTitle: React.CSSProperties = {
   fontWeight: 700,
@@ -94,7 +95,7 @@ const inkBtn: React.CSSProperties = {
 function Kicker({ children, heading = false }: { children: React.ReactNode; heading?: boolean }) {
   const Tag = heading ? "h3" : "div";
   return (
-    <Tag className="cinzel" style={{ margin: 0, fontSize: 12, fontWeight: 400, letterSpacing: ".24em", color: ACCENT, textAlign: "center", lineHeight: 1.5, textWrap: "balance" }}>
+    <Tag className="cinzel" style={{ margin: 0, fontSize: 12.5, fontWeight: 400, letterSpacing: ".22em", color: ACCENT, textAlign: "center", lineHeight: 1.5, textWrap: "balance" }}>
       {children}
     </Tag>
   );
@@ -127,7 +128,7 @@ function SectionRule({ children }: { children: React.ReactNode }) {
   return (
     <h4 style={{ display: "flex", alignItems: "center", gap: 12, margin: "26px 0 12px", fontWeight: 400 }}>
       <span aria-hidden style={{ flex: 1, height: 1, background: `linear-gradient(90deg, transparent, ${ACCENT})` }} />
-      <span className="cinzel" style={{ color: ACCENT, fontSize: 11.5, letterSpacing: ".22em", whiteSpace: "nowrap" }}>{children}</span>
+      <span className="cinzel" style={{ color: ACCENT, fontSize: 12.5, letterSpacing: ".2em", whiteSpace: "nowrap" }}>{children}</span>
       <span aria-hidden style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${ACCENT}, transparent)` }} />
     </h4>
   );
@@ -146,7 +147,7 @@ function DateBadge({ children }: { children: React.ReactNode }) {
   return (
     <span
       className="cinzel"
-      style={{ fontSize: 11, letterSpacing: ".1em", color: ACCENT, border: "1px solid rgba(138,100,32,.5)", borderRadius: 2, padding: "2px 8px", whiteSpace: "nowrap" }}
+      style={{ fontSize: 12.5, letterSpacing: ".08em", color: ACCENT, border: "1px solid rgba(138,100,32,.5)", borderRadius: 2, padding: "2px 8px", whiteSpace: "nowrap" }}
     >
       {children}
     </span>
@@ -156,19 +157,19 @@ function DateBadge({ children }: { children: React.ReactNode }) {
 function Chips({ items, label }: { items: string[]; label: string }) {
   if (items.length === 0) return null;
   return (
-    <ul aria-label={label} style={{ listStyle: "none", margin: "11px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: 6 }}>
+    <ul aria-label={label} style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: 6 }}>
       {items.map((t) => (
+        // tool names in the body face, as written — not tiny capitals
         <li
           key={t}
-          className="cinzel"
           style={{
-            fontSize: 10.5,
-            letterSpacing: ".07em",
+            fontSize: 14.5,
+            lineHeight: 1.3,
             color: INK_SOFT,
             background: "rgba(201,150,60,.13)",
-            border: "1px solid rgba(138,100,32,.45)",
+            border: "1px solid rgba(138,100,32,.4)",
             borderRadius: 2,
-            padding: "3px 8px",
+            padding: "2px 9px",
           }}
         >
           {t}
@@ -182,9 +183,16 @@ function Bullets({ items }: { items: string[] }) {
   if (items.length === 0) return null;
   return (
     <ul style={bulletList}>
-      {items.map((d, i) => (
-        <li key={i} style={{ textWrap: "pretty" }}>{d}</li>
-      ))}
+      {items.map((d, i) => {
+        // a short "Label:" lead-in is set in bold so a long list scans
+        const [lead, rest] = leadIn(d);
+        return (
+          <li key={i} style={{ textWrap: "pretty" }}>
+            {lead && <b style={{ fontWeight: 600, color: HEAD }}>{lead}: </b>}
+            {rest}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -212,7 +220,7 @@ const external = { target: "_blank", rel: "noreferrer" } as const;
 function ExperienceEntry({ e }: { e: ExperienceRecord }) {
   const meta = [e.company, e.location, e.employmentType].filter(Boolean).join(" · ");
   return (
-    <article style={{ marginBottom: 22 }}>
+    <article className="rec-entry">
       <div style={entryHead}>
         <h5 className="cinzel" style={entryTitle}>{e.title}</h5>
         <DateBadge>{fmtMonth(e.start)} — {fmtMonth(e.end)}</DateBadge>
@@ -227,7 +235,7 @@ function ExperienceEntry({ e }: { e: ExperienceRecord }) {
 
 function EducationEntry({ e }: { e: EducationRecord }) {
   return (
-    <article style={{ marginBottom: 22 }}>
+    <article className="rec-entry">
       <div style={entryHead}>
         <h5 className="cinzel" style={entryTitle}>{e.institution}</h5>
         {(e.startYear || e.endYear) && <DateBadge>{e.startYear} — {e.endYear ?? "Present"}</DateBadge>}
@@ -251,12 +259,12 @@ function EducationEntry({ e }: { e: EducationRecord }) {
 function ProjectEntry({ p }: { p: ProjectRecord }) {
   const years = p.yearStart ? `${p.yearStart} — ${p.yearEnd ?? "ongoing"}` : null;
   return (
-    <article style={{ marginBottom: 22 }}>
+    <article className="rec-entry">
       <div style={entryHead}>
         <h5 className="cinzel" style={{ ...entryTitle, fontSize: 17.5 }}>
           {p.name}
           {p.kind && (
-            <span style={{ fontSize: 10, fontWeight: 400, letterSpacing: ".14em", color: ACCENT, marginLeft: 10, verticalAlign: "middle" }}>
+            <span style={{ fontSize: 11, fontWeight: 400, letterSpacing: ".14em", color: ACCENT, marginLeft: 10, verticalAlign: "middle" }}>
               {p.kind.toUpperCase()}
             </span>
           )}
@@ -282,6 +290,7 @@ function ProjectEntry({ p }: { p: ProjectRecord }) {
 function Prologue() {
   const profile = useContent((c) => c.profile);
   const resumes = useContent((c) => c.resumeVariants);
+  const skills = useContent((c) => c.skills);
   const p = withFallbacks(profile);
   const main = resumes.find((v) => v.isDefault) ?? resumes[0];
   const others = resumes.filter((v) => v !== main);
@@ -295,18 +304,32 @@ function Prologue() {
         {[p.headline, p.location].filter(Boolean).map((t, i) => (
           <Fragment key={i}>
             {i > 0 && "\u00a0· "}
-            <span style={{ whiteSpace: "nowrap" }}>{t}</span>
+            <span style={{ display: "inline-block" }}>{t}</span>
           </Fragment>
         ))}
       </div>
       <Flourish />
       {p.summary && <p className="rb-dropcap" style={prose}>{p.summary}</p>}
 
+      {skills.length > 0 && (
+        <>
+          <SectionRule>THE CRAFT</SectionRule>
+          <dl style={{ margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+            {skills.map((g) => (
+              <div key={g.category}>
+                <dt className="cinzel" style={{ fontSize: 12, letterSpacing: ".16em", color: ACCENT }}>{g.category.toUpperCase()}</dt>
+                <dd style={{ margin: "1px 0 0", fontSize: 16.5, lineHeight: 1.45, textWrap: "pretty" }}>{g.items.join(" · ")}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
+
       <SectionRule>THE OLD ROADS</SectionRule>
       <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", alignItems: "baseline", gap: "7px 16px", margin: 0, fontSize: 16.5 }}>
         {roads.map((r) => (
           <Fragment key={r.label + r.url}>
-            <dt className="cinzel" style={{ fontSize: 11, letterSpacing: ".16em", color: ACCENT }}>{r.label.toUpperCase()}</dt>
+            <dt className="cinzel" style={{ fontSize: 12, letterSpacing: ".16em", color: ACCENT }}>{r.label.toUpperCase()}</dt>
             <dd style={{ margin: 0, minWidth: 0, overflowWrap: "anywhere" }}>
               <a href={r.url} {...(r.url.startsWith("mailto:") ? {} : external)}>{bareUrl(r.url)}</a>
             </dd>
@@ -488,7 +511,9 @@ function ChapterRecord({ region }: { region: RegionContent }) {
   return (
     <>
       <Kicker heading>THE RECORD · {region.place.toUpperCase()}</Kicker>
-      {region.deeds.length > 0 && (
+      {/* the tale only summarises the record — as on paper, it stands in only
+          where no record stands behind it, or every deed is told twice */}
+      {!hasRecord(region) && region.deeds.length > 0 && (
         <>
           <SectionRule>THE TALE</SectionRule>
           <Bullets items={region.deeds} />

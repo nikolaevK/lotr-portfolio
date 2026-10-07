@@ -86,6 +86,11 @@ export interface ProfileInfo {
   links: { label: string; url: string }[];
 }
 
+export interface SkillGroup {
+  category: string;
+  items: string[];
+}
+
 export interface ResumeVariant {
   label: string;
   path: string;
@@ -100,6 +105,7 @@ interface ContentState {
   beacons: Beacon[];
   xp: typeof XP;
   profile: ProfileInfo | null;
+  skills: SkillGroup[];
   resumeVariants: ResumeVariant[];
   hydrate: () => Promise<void>;
 }
@@ -121,6 +127,7 @@ export const useContent = create<ContentState>()((set) => ({
   beacons: BEACONS,
   xp: XP,
   profile: null,
+  skills: [],
   resumeVariants: [{ label: "Software Engineer", path: "/assets/resume.pdf", isDefault: true }],
 
   hydrate: async () => {
@@ -142,6 +149,7 @@ export const useContent = create<ContentState>()((set) => ({
         beacons: Array.isArray(data.beacons) ? data.beacons : BEACONS,
         xp: data.xp ?? XP,
         profile: data.profile ?? null,
+        skills: Array.isArray(data.skills) ? data.skills : [],
         resumeVariants: Array.isArray(data.resumeVariants)
           ? data.resumeVariants
           : [{ label: "Software Engineer", path: "/assets/resume.pdf", isDefault: true }],

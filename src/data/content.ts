@@ -69,7 +69,7 @@ export const REGIONS: Region[] = [
     common: {
       label: "Construction & Electrical · 2025",
       title: "The Dwarf Lands — Halls of Stone & Lightning",
-      sub: "General Construction & Electrical Apprentice — Wealful Inc. · May–Dec 2025",
+      sub: "General Construction & Electrical Apprentice — Wealful Inc. · May–Oct 2025",
     },
     elvish: {
       label: "Halls of the Dwarves",
@@ -99,7 +99,7 @@ export const REGIONS: Region[] = [
     common: {
       label: "Learning the Craft · 2022–2024",
       title: "The Elf Realms — The Learning Years",
-      sub: "Self-taught software engineering · project-based · 2022–2024",
+      sub: "Engineering foundations, built by hand before AI-assisted development · 2022–2024",
     },
     elvish: {
       label: "The Elven Refuges",
@@ -107,10 +107,11 @@ export const REGIONS: Region[] = [
       sub: "In which the modern arts are studied deep into the night, until the student builds his own",
     },
     deeds: [
-      "Learned the craft: TypeScript, React, Next.js, Node.js, SQL",
-      "Built e-commerce, messaging & content platforms end-to-end",
-      "Data models, dashboards, auth & payments — the full lifecycle",
-      "MongoDB, Firebase, Prisma, GraphQL, REST",
+      "Built my foundations by hand from 2022, before adopting AI-assisted development",
+      "Data structures from scratch — heaps, hash tables, trees, Dijkstra, a shunting-yard parser",
+      "List virtualization in React — windowed lists and 2D grids, no libraries",
+      "Real-time messenger on GraphQL subscriptions over WebSockets",
+      "Multi-store e-commerce dashboard and storefront with Stripe checkout",
     ],
     artifact: {
       name: "Tome of the Eldar",
@@ -126,9 +127,9 @@ export const REGIONS: Region[] = [
     glyph: "G",
     ring: "#c9c9c9",
     common: {
-      label: "Agency Collective · 2026–Present",
+      label: "Agency Collective · 2025–Present",
       title: "The White City — Agency Collective",
-      sub: "Full-Stack Software Engineer · sole engineer of the platform · Jan 2026–Present",
+      sub: "Full-Stack Software Engineer · sole engineer on three products · Nov 2025–Present",
     },
     elvish: {
       label: "The White City",
@@ -136,11 +137,11 @@ export const REGIONS: Region[] = [
       sub: "In which one keeper builds the citadel’s every working, and the seeing-stones show all",
     },
     deeds: [
-      "Sole engineer of a three-portal platform — admin, client & sales",
-      "Meta Ads analytics: KPI dashboards, drill-downs & automated alert feed",
-      "AI Analyst on Claude & Gemini — plain-English answers over live ad data",
-      "CRM & sales pipeline: deals, commissions, leaderboards, 2-way calendar sync",
-      "Full billing suite: recurring invoices, PDF generation, e-sign contracts",
+      "Sole engineer on three products — the agency dashboard, a commerce platform and an AI assistant",
+      "Deal pipeline — one form creates the deal, its invoice and e-sign contract, approved in one atomic batch",
+      "REST API of 180+ operations, and MCP servers the company's AI agents use every day",
+      "Role-based access with 13 permissions, enforced in middleware and again in every route",
+      "Security and quality — OAuth 2.1, two-factor sign-in, encrypted secrets, WCAG 2.2 AA tests",
     ],
     artifact: {
       name: "Palantír of the Tower",

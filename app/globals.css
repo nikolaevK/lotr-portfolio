@@ -208,6 +208,14 @@ button {
   }
 }
 
+/* one entry of a record (a post, a degree, a work), in the scrolls and the
+   Red Book alike: a hairline and breathing room keep neighbours apart */
+.rec-entry + .rec-entry {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(138, 100, 32, 0.3);
+}
+
 /* ===== accessibility ===== */
 
 /* read by screen readers, invisible on the page */
